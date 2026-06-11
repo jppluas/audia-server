@@ -1,0 +1,13 @@
+[Unit]
+Description=FonoScreen first boot setup
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /home/pi/fonoscreen-server/first_boot.sh
+RemainAfterExit=yes
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

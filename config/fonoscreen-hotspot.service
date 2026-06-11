@@ -1,0 +1,12 @@
+[Unit]
+Description=FonoScreen - Configurar hotspot al arranque
+After=NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/modo-hotspot
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,18 @@
+#!/bin/bash
+echo "Activando modo desarrollo (WiFi normal)..."
+sudo systemctl stop fonoscreen-hotspot
+sudo systemctl stop hostapd
+sudo systemctl disable hostapd
+sudo systemctl mask hostapd
+sudo systemctl stop dnsmasq
+sudo ip addr del 192.168.4.1/24 dev wlan0 2>/dev/null || true
+sudo ip link set wlan0 up
+sudo rm -f /etc/NetworkManager/conf.d/unmanaged.conf
+sudo systemctl restart NetworkManager
+sleep 3
+sudo nmcli device wifi connect SSID_AQUI password CONTRASENA_AQUI
+sleep 5
+sudo systemctl stop hostapd
+sudo ip addr del 192.168.4.1/24 dev wlan0 2>/dev/null || true
+ip addr show wlan0 | grep "inet "
+echo "Modo desarrollo activo. Conéctate por SSH."

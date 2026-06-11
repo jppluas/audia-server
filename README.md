@@ -11,8 +11,16 @@ ESPOL · Ingeniería en Ciencias de la Computación · Materia Integradora
 fonoscreen-server/
 ├── app.py                  # Servidor Flask — toda la infraestructura
 ├── requirements.txt        # Flask==3.1.3
-├── fonoscreen.service      # Servicio systemd para autoarranque en el Pi
-├── setup_hotspot.sh        # Configura el hotspot Wi-Fi (solo Pi, una vez)
+├── first_boot.sh           # Script de primer arranque del Pi
+├── first-boot.service      # Servicio systemd que lanza first_boot.sh
+├── backup_config.sh        # Script para hacer backup de la configuración
+├── config/                 # Archivos de configuración del sistema (fuente única)
+│   ├── hostapd.conf
+│   ├── dnsmasq.conf
+│   ├── modo-hotspot        # Script de switch a modo hotspot
+│   ├── modo-dev            # Script de switch a modo desarrollo
+│   ├── fonoscreen.service
+│   └── fonoscreen-hotspot.service
 ├── templates/
 │   ├── base.html           # Layout compartido (header, footer)
 │   ├── register.html       # Registro del niño antes de la prueba
@@ -22,109 +30,290 @@ fonoscreen-server/
 ├── static/
 │   ├── css/base.css        # Estilos mobile-first
 │   └── js/utils.js         # Utilidades JS: toast, confirm, api()
-├── exports/                # PDFs generados (ignorado por git)
+├── backups/                # Backups del sistema (git-ignored)
+├── exports/                # PDFs generados (git-ignored)
 └── logs/
-    └── server.log          # Log del servidor
+    └── server.log
 ```
 
 ---
 
-## Levantar en laptop de desarrollo (Debian 12)
+## Desarrollo en laptop (Debian 12)
 
 ```bash
 cd ~/fonoscreen-server
-
-# Crear el venv DENTRO de la carpeta del proyecto (no fuera)
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 python app.py
+# Abrir http://localhost:5000
 ```
 
-El servidor queda en `http://0.0.0.0:5000`.
-Abrir en el navegador en `http://localhost:5000` o desde el celular en
-`http://<IP-de-la-laptop>:5000` si están en la misma red.
+Desde el celular (misma red): `http://<IP-de-la-laptop>:5000`
 
 En laptop, `IS_PI = False`. Esto significa:
 - El volumen, tono, grabación de micrófono y apagado se **simulan** (responden ok sin ejecutar nada real).
 - El endpoint `/dev/simulate` está activo para simular el pipeline manualmente.
 - El servidor corre en modo debug con recarga automática.
 
-> **Importante:** el venv nunca se mueve ni se copia entre carpetas. Si cambias
-> el nombre o la ubicación de la carpeta del proyecto, borra el venv y créalo
-> de nuevo con `python3 -m venv venv`. Los venvs tienen rutas absolutas
-> hardcodeadas y dejan de funcionar si se mueven.
+> **Importante:** el venv tiene rutas absolutas. Si mueves o renombras la
+> carpeta, bórralo y créalo de nuevo:
+> ```bash
+> rm -rf venv
+> python3 -m venv venv
+> source venv/bin/activate
+> pip install -r requirements.txt
+> ```
 
 > **Importante:** verificar siempre que solo hay un proceso corriendo antes de
 > probar. Dos servidores activos al mismo tiempo causan comportamiento
 > impredecible porque el navegador puede estar hablando con el proceso viejo.
 > ```bash
 > pkill -f "python app.py"
-> # verificar que no queda ninguno:
-> ps aux | grep "python app.py"
-> # luego arrancar de nuevo
+> sleep 1
+> ps aux | grep "python app.py"  # verificar que no queda ninguno
 > python app.py
 > ```
 
-> **Importante:** para probar la interfaz correctamente, usar una ventana
-> incógnito en Chrome (`Ctrl+Shift+N`). Las extensiones del navegador pueden
-> interceptar eventos de click y hacer que los botones no respondan aunque
-> el código esté correcto.
+> **Importante:** probar en ventana incógnito (`Ctrl+Shift+N`). Las extensiones
+> de Chrome pueden interceptar eventos de click y hacer que los botones no
+> respondan aunque el código esté correcto.
 
 ---
 
-## Levantar en Raspberry Pi 5
+## Configurar una Raspberry Pi nueva (primer uso)
 
-### Primera vez (una sola vez)
+Este es el proceso completo desde cero para cualquier Pi (3 B+, 4 o 5).
+
+### Paso 1: Flashear la microSD con Raspberry Pi Imager
+
+En Raspberry Pi Imager configurar:
+- **OS:** Raspberry Pi OS Lite (64-bit)
+- **Hostname:** `fonoscreen`
+- **SSH:** activado, autenticación por contraseña
+- **Usuario:** `pi`, contraseña la que prefieras
+- **Wi-Fi:** nombre y contraseña de la red donde se va a hacer el primer arranque
+- **Zona horaria:** `America/Guayaquil`
+- **Teclado:** `es`
+
+> La red Wi-Fi configurada aquí es la que el Pi usará para conectarse a internet
+> en el primer arranque y descargar dependencias. El `first_boot.sh` la leerá
+> automáticamente para configurar el modo desarrollo.
+
+### Paso 2: Editar `config/modo-dev` antes de copiar
+
+Abrir `config/modo-dev` y reemplazar `CONTRASENA_AQUI` con la contraseña real
+de tu red Wi-Fi. El SSID se detecta automáticamente del Imager, pero la
+contraseña no está disponible (está hasheada). Si prefieres, puedes dejarlo
+con el placeholder y editarlo después en el Pi.
+
+### Paso 3: Copiar el proyecto a la microSD
+
+Con la SD montada en la laptop:
 
 ```bash
-# 1. Configurar hotspot Wi-Fi
-sudo bash setup_hotspot.sh
-sudo reboot
+# Verificar que está montada
+ls /media/$USER/rootfs/home/pi/
 
-# 2. Crear usuario de servicio
-sudo useradd -m -s /bin/bash fonoscreen
+# Copiar el proyecto completo
+sudo cp -r ~/fonoscreen-server /media/$USER/rootfs/home/pi/
+sudo chown -R 1000:1000 /media/$USER/rootfs/home/pi/fonoscreen-server
 
-# 3. Instalar el proyecto
-sudo -u fonoscreen git clone <repo> /home/fonoscreen/fonoscreen-server
-cd /home/fonoscreen/fonoscreen-server
+# Eliminar el venv de laptop (no sirve en ARM)
+sudo rm -rf /media/$USER/rootfs/home/pi/fonoscreen-server/venv
+
+# Copiar el servicio de primer arranque
+sudo cp /media/$USER/rootfs/home/pi/fonoscreen-server/first-boot.service \
+    /media/$USER/rootfs/etc/systemd/system/
+
+# Habilitar el servicio (crear symlink)
+sudo ln -sf /etc/systemd/system/first-boot.service \
+    /media/$USER/rootfs/etc/systemd/system/multi-user.target.wants/first-boot.service
+```
+
+### Paso 4: Desmontar y arrancar el Pi
+
+```bash
+sudo umount /media/$USER/bootfs
+sudo umount /media/$USER/rootfs
+```
+
+Insertar la SD en el Pi y encender. El `first_boot.sh` corre automáticamente:
+1. Instala dependencias del sistema (`sox`, `alsa-utils`, `hostapd`, `dnsmasq`)
+2. Crea el venv ARM e instala Flask
+3. Copia los archivos de `config/` a sus rutas del sistema
+4. Configura sudoers y aliases
+5. Habilita los servicios systemd
+6. Activa el hotspot
+7. Reinicia
+
+El proceso tarda 5-10 minutos dependiendo de la velocidad de internet. El Pi
+se reinicia solo al terminar.
+
+### Paso 5: Verificar
+
+Después del reinicio, buscar la red `FonoScreen` en el celular, conectarse con
+la contraseña `fonoscreen2025` y abrir `http://192.168.4.1:5000`.
+
+Para ver el log del primer arranque:
+```bash
+# Conectarse en modo dev primero (ver sección abajo), luego:
+cat ~/first_boot.log
+```
+
+---
+
+## Setup manual del Pi (alternativa si first_boot.sh falla)
+
+Si el arranque automático no funciona, este es el proceso paso a paso:
+
+```bash
+# 1. Instalar dependencias de audio y red
+sudo apt install -y sox alsa-utils hostapd dnsmasq
+
+# 2. Clonar el proyecto
+git clone <repo> ~/fonoscreen-server
+cd ~/fonoscreen-server
+
+# 3. Crear el venv ARM
 python3 -m venv venv
 venv/bin/pip install -r requirements.txt
 
-# 4. Instalar dependencias de audio
-sudo apt install -y sox alsa-utils
+# 4. Copiar archivos de configuración
+sudo cp config/hostapd.conf /etc/hostapd/hostapd.conf
+sudo cp config/dnsmasq.conf /etc/dnsmasq.conf
+sudo cp config/modo-hotspot /usr/local/bin/modo-hotspot
+sudo cp config/modo-dev /usr/local/bin/modo-dev
+sudo chmod +x /usr/local/bin/modo-hotspot /usr/local/bin/modo-dev
+sudo cp config/fonoscreen.service /etc/systemd/system/
+sudo cp config/fonoscreen-hotspot.service /etc/systemd/system/
 
-# 5. Habilitar autoarranque
-sudo cp fonoscreen.service /etc/systemd/system/
+# 5. Habilitar servicios
 sudo systemctl daemon-reload
-sudo systemctl enable fonoscreen
-sudo systemctl start fonoscreen
+sudo systemctl enable fonoscreen fonoscreen-hotspot
+
+# 6. Activar hotspot
+sudo /usr/local/bin/modo-hotspot
 ```
 
-El celular del evaluador se conecta a la red Wi-Fi `FonoScreen` (contraseña: `fonoscreen2025`)
-y abre `http://192.168.4.1` en el navegador. No necesita instalar nada.
-
-### Ver logs en tiempo real
-
+Ver los logs del servicio:
 ```bash
 journalctl -u fonoscreen -f
 # o directamente:
-tail -f /home/fonoscreen/fonoscreen-server/logs/server.log
+tail -f ~/fonoscreen-server/logs/server.log
 ```
-
-En Pi, `IS_PI = True`. El volumen, tono, grabación y apagado son reales.
-El endpoint `/dev/simulate` está **deshabilitado** (devuelve 403).
 
 ---
 
-## Estado global de sesión — lo que Daniel debe modificar
+## Uso diario
 
-El pipeline se comunica con la UI a través de un diccionario global en memoria
-llamado `_session_state` definido en `app.py`. La UI hace polling a ese estado
-cada 1.5 segundos y actualiza la pantalla automáticamente.
+### Modo producción (por defecto al encender)
 
+El Pi genera la red `FonoScreen` automáticamente. Cualquier dispositivo se
+conecta con `fonoscreen2025` y abre `http://192.168.4.1:5000`.
+
+### Activar modo desarrollo (SSH)
+
+Desde la terminal del Pi o desde el botón en el panel de dispositivo de la app:
+
+```bash
+devmode
+```
+
+Esperar 2-5 minutos (normal en Pi 3 B+) y conectar por SSH:
+
+```bash
+TERM=xterm-256color ssh pi@<IP-del-pi>
+```
+
+Para encontrar la IP del Pi en la red:
+```bash
+nmap -sn 192.168.100.0/24  # ajustar subred según tu router
+```
+
+Al reiniciar el Pi, vuelve automáticamente al modo hotspot.
+
+### Volver al modo hotspot
+
+```bash
+hotspot
+```
+
+### Cambiar la red Wi-Fi del modo desarrollo
+
+Si vas a usar el Pi en una red diferente, editar el script:
+
+```bash
+sudo nano /usr/local/bin/modo-dev
+# Cambiar SSID_AQUI y CONTRASENA_AQUI
+```
+
+Y también actualizar la fuente en el proyecto para que el cambio quede en git:
+
+```bash
+nano ~/fonoscreen-server/config/modo-dev
+```
+
+---
+
+## Backup de la configuración
+
+Para hacer backup de todos los archivos del sistema desde el Pi:
+
+```bash
+bash ~/fonoscreen-server/backup_config.sh
+```
+
+El backup queda en `~/fonoscreen-server/backups/backup-<fecha>/`.
+
+Para copiarlo a la laptop:
+```bash
+# Desde la laptop:
+scp -r pi@<IP-del-pi>:~/fonoscreen-server/backups/ ~/fonoscreen-server/backups/
+```
+
+El backup incluye: `modo-hotspot`, `modo-dev`, `fonoscreen.service`,
+`fonoscreen-hotspot.service`, `hostapd.conf`, `dnsmasq.conf`, `sudoers`,
+`.bashrc`, y un snapshot del estado del sistema.
+
+---
+
+## Modificar la configuración del sistema
+
+Si cambias algún archivo en `config/`, debes copiarlo manualmente al sistema:
+
+```bash
+# Ejemplo: actualizar modo-hotspot
+sudo cp ~/fonoscreen-server/config/modo-hotspot /usr/local/bin/modo-hotspot
+
+# Ejemplo: actualizar fonoscreen.service
+sudo cp ~/fonoscreen-server/config/fonoscreen.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl restart fonoscreen
+```
+
+Los archivos en `config/` son la fuente única de verdad. Los del sistema son
+copias. Siempre editar en `config/` primero y luego copiar.
+
+---
+
+## Detección automática de entorno
+
+```python
+IS_PI = Path("/proc/device-tree/model").exists()
+```
+
+Este archivo solo existe en Raspberry Pi. No hay que configurar nada:
+el mismo código funciona en laptop y en Pi sin cambios.
+
+---
+
+## Integración del pipeline (para Daniel)
+
+El pipeline modifica `_session_state` en `app.py` directamente desde su hilo.
 **Daniel no hace peticiones HTTP. Solo modifica `_session_state` directamente
 desde el hilo del pipeline.**
+La UI hace polling cada 1.5s y reacciona automáticamente.
 
 ### Estructura completa del estado
 
@@ -152,9 +341,9 @@ _session_state = {
 }
 ```
 
-### Tabla de estados (`status`)
+### Estados posibles
 
-| valor | qué ve el docente | cuándo usarlo |
+| status | qué ve el docente | cuándo usarlo |
 |---|---|---|
 | `idle` | Preparando evaluación | al iniciar, antes del primer ítem |
 | `playing` | Escucha con atención | mientras se reproduce el estímulo de audio |
@@ -182,43 +371,27 @@ _session_state["results"] = {
 }
 ```
 
----
+### Conectar el pipeline
 
-## Cómo integrar el pipeline — paso a paso
-
-### 1. Importar el estado en tu módulo
+En `app.py`, buscar el bloque `# TODO` (~línea 125):
 
 ```python
-# En pipeline.py (o como llames tu módulo)
-import app  # importa el módulo completo para acceder al estado global
-```
-
-### 2. Lanzar el pipeline desde app.py
-
-En `app.py`, busca este bloque comentado (~línea 125) y reemplázalo:
-
-```python
-# Antes (comentado):
-# TODO: aquí se lanza el pipeline en un hilo separado
-# from pipeline import run_pipeline
-# threading.Thread(target=run_pipeline, args=(session_id,), daemon=True).start()
-
-# Después (activo):
 import threading
 from pipeline import run_pipeline
-threading.Thread(
-    target=run_pipeline,
-    args=(session_id,),
-    daemon=True
-).start()
+threading.Thread(target=run_pipeline, args=(session_id,), daemon=True).start()
 ```
 
-### 3. Estructura básica de `run_pipeline`
+### Estructura básica de `run_pipeline`
 
 ```python
 # pipeline.py
 import app
 import time
+
+def esperar_si_pausado():
+    """Bloquea el hilo del pipeline mientras el docente tiene pausada la prueba."""
+    while app._session_state.get("status") == "paused":
+        time.sleep(0.5)
 
 def run_pipeline(session_id):
     state = app._session_state
@@ -229,16 +402,13 @@ def run_pipeline(session_id):
     for i, word in enumerate(WORDS):
 
         # Verificar cancelación al inicio de cada ítem
-        if not app._session_state["active"]:
+        if not state["active"]:
             return
 
-        # Esperar si está pausado
         esperar_si_pausado()
 
         # 1. Reproducir estímulo
-        state["status"] = "playing"
-        state["current_word"] = word
-        state["current_item"] = i
+        state.update({"status": "playing", "current_word": word, "current_item": i})
         reproducir_audio(word)
 
         esperar_si_pausado()
@@ -249,23 +419,19 @@ def run_pipeline(session_id):
 
         # 3. Verificar que el niño habló (Silero VAD)
         if not voz_detectada(audio):
-            state["status"] = "no_voice"
-            state["no_voice_detected"] = True
+            state.update({"status": "no_voice", "no_voice_detected": True})
             continue  # reintentar este ítem
 
         state["no_voice_detected"] = False
         guardar_audio(session_id, i, audio)
 
     # Fase de análisis (XLS-R + Phonemizer + NW)
-    state["status"] = "analyzing"
-    state["analysis_progress"] = 0
-
+    state.update({"status": "analyzing", "analysis_progress": 0})
     resultados = []
     for i, word in enumerate(WORDS):
-        if not app._session_state["active"]:
+        if not state["active"]:
             return
-        resultado = analizar(session_id, i, word)
-        resultados.append(resultado)
+        resultados.append(analizar(session_id, i, word))
         state["analysis_progress"] = i + 1
 
     # Generar reporte (Gemma via Ollama)
@@ -279,15 +445,9 @@ def run_pipeline(session_id):
         "details": reporte["details"],
     }
     state["status"] = "done"
-
-
-def esperar_si_pausado():
-    """Bloquea el hilo del pipeline mientras el docente tiene pausada la prueba."""
-    while app._session_state.get("status") == "paused":
-        time.sleep(0.5)
 ```
 
-### 4. Cómo funciona la pausa y reanudación
+### Cómo funciona la pausa y reanudación
 
 Cuando el docente presiona "Pausar":
 - La infraestructura pone `state["status"] = "paused"`
@@ -303,7 +463,7 @@ El pipeline no necesita hacer nada especial para reanudar: solo llamar
 
 ---
 
-## Simular el pipeline manualmente (solo en laptop)
+## Simular el pipeline en laptop
 
 Con el servidor corriendo en modo debug, desde otra terminal:
 
@@ -314,9 +474,9 @@ BASE="http://localhost:5000/dev/simulate"
 curl -s -X POST $BASE -H "Content-Type: application/json" -d '{"action":"playing"}'
 curl -s -X POST $BASE -H "Content-Type: application/json" -d '{"action":"recording"}'
 curl -s -X POST $BASE -H "Content-Type: application/json" -d '{"action":"no_voice"}'
-curl -s -X POST $BASE -H "Content-Type: application/json" -d '{"action":"progress"}'        # repetir 20 veces
+curl -s -X POST $BASE -H "Content-Type: application/json" -d '{"action":"progress"}'           # repetir 20 veces
 curl -s -X POST $BASE -H "Content-Type: application/json" -d '{"action":"analyzing"}'
-curl -s -X POST $BASE -H "Content-Type: application/json" -d '{"action":"analysis_progress"}' # repetir 20 veces
+curl -s -X POST $BASE -H "Content-Type: application/json" -d '{"action":"analysis_progress"}'  # repetir 20 veces
 curl -s -X POST $BASE -H "Content-Type: application/json" -d '{"action":"generating_report"}'
 curl -s -X POST $BASE -H "Content-Type: application/json" -d '{"action":"done"}'
 ```
@@ -324,7 +484,7 @@ curl -s -X POST $BASE -H "Content-Type: application/json" -d '{"action":"done"}'
 Cada comando responde con el estado completo en JSON.
 La pantalla de sesión reacciona en máximo 1.5 segundos sin recargar.
 
-Para probar pausa y reanudación con simulate:
+Para probar pausa y reanudación:
 ```bash
 # Mientras la sesión está en curso, pausar:
 curl -s -X POST http://localhost:5000/api/session/pause \
@@ -335,9 +495,11 @@ curl -s -X POST http://localhost:5000/api/session/resume \
   -H "Content-Type: application/json"
 ```
 
+> El endpoint `/dev/simulate` está **deshabilitado en Pi** (devuelve 403).
+
 ---
 
-## Endpoints HTTP disponibles
+## Endpoints HTTP
 
 | método | ruta | descripción |
 |---|---|---|
@@ -359,6 +521,7 @@ curl -s -X POST http://localhost:5000/api/session/resume \
 | POST | `/api/device/mic/start` | Inicia grabación de prueba (indefinida hasta /stop) |
 | POST | `/api/device/mic/stop` | Detiene la grabación de prueba |
 | POST | `/api/device/mic/play` | Reproduce la grabación de prueba por el parlante |
+| POST | `/api/device/devmode` | Activa modo desarrollo (solo Pi) |
 | POST | `/api/device/shutdown` | Apaga el dispositivo (`sudo shutdown now`) |
 | POST | `/api/device/reboot` | Reinicia el dispositivo (`sudo reboot`) |
 | GET | `/api/device/status` | Uptime, disco, hora del servidor |
@@ -383,30 +546,18 @@ Environment="FONOSCREEN_SECRET=una-clave-larga-y-segura"
 
 ---
 
-## Detección automática de entorno
-
-```python
-IS_PI = Path("/proc/device-tree/model").exists()
-```
-
-Este archivo solo existe en Raspberry Pi. No hay que configurar nada:
-el mismo código funciona en laptop y en Pi sin cambios.
-
----
-
 ## Troubleshooting
 
 ### El servidor arranca pero la UI no carga los templates
 
 **Síntoma:** `jinja2.exceptions.TemplateNotFound: register.html`
 
-**Causa:** los archivos HTML no están en la carpeta `templates/` sino sueltos
-en la raíz del proyecto.
+**Causa:** los archivos HTML no están en la carpeta `templates/`.
 
 **Solución:**
 ```bash
 mkdir -p templates static/css static/js
-mv register.html session.html results.html device.html base.html templates/
+mv *.html templates/
 mv base.css static/css/
 mv utils.js static/js/
 ```
@@ -415,10 +566,9 @@ mv utils.js static/js/
 
 ### `bash: /home/jp/fonoscreen/venv/bin/python: No existe el fichero`
 
-**Causa:** el venv fue creado en otra carpeta o la carpeta del proyecto fue
-renombrada. Los venvs tienen rutas absolutas hardcodeadas y no son portables.
+**Causa:** los venvs tienen rutas absolutas hardcodeadas y no son portables.
 
-**Solución:** siempre recrear el venv desde cero en la carpeta actual:
+**Solución:**
 ```bash
 rm -rf venv
 python3 -m venv venv
@@ -479,8 +629,7 @@ la ruta no existe o hay un error en el servidor.
 **Solución:** revisar la terminal donde corre el servidor para ver el error
 real. También verificar en Network que el status code no sea 404 o 500.
 
-Si es 404, el endpoint no existe en el `app.py` que está corriendo. Verificar
-con:
+Si es 404, el endpoint no existe en el `app.py` que está corriendo. Verificar:
 ```bash
 grep "nombre_del_endpoint" ~/fonoscreen-server/app.py
 ```
@@ -515,8 +664,88 @@ pip install -r requirements.txt
 
 ---
 
-## Pendiente — TODOs para el siguiente sprint
+### El servicio falla con `status=217/USER`
 
-- `app.py` ~línea 125: descomentar el lanzamiento del pipeline en hilo
-- `api_report()`: reemplazar placeholder de texto por PDF real (weasyprint o reportlab)
+```bash
+sudo nano /etc/systemd/system/fonoscreen.service
+# Verificar User=pi y WorkingDirectory=/home/pi/fonoscreen-server
+sudo systemctl daemon-reload && sudo systemctl restart fonoscreen
+```
+
+---
+
+### El servicio falla con `status=209/STDOUT`
+
+Cambiar en el `.service`:
+```
+StandardOutput=journal
+StandardError=journal
+```
+
+---
+
+### La red FonoScreen no aparece después de reiniciar
+
+```bash
+sudo systemctl status fonoscreen-hotspot
+sudo /usr/local/bin/modo-hotspot
+```
+
+---
+
+### La red FonoScreen aparece pero no asigna IP
+
+```bash
+sudo ip addr add 192.168.4.1/24 dev wlan0
+sudo systemctl restart dnsmasq
+```
+
+---
+
+### NetworkManager pisa la IP del hotspot
+
+```bash
+cat /etc/NetworkManager/conf.d/unmanaged.conf
+# Si no existe:
+sudo /usr/local/bin/modo-hotspot
+```
+
+---
+
+### El modo desarrollo tarda en estar disponible por SSH
+
+Normal en Pi 3 B+, esperar hasta 5 minutos. Si después de 5 minutos no conecta:
+
+```bash
+# Desde el monitor del Pi:
+sudo ip addr del 192.168.4.1/24 dev wlan0 2>/dev/null
+sudo systemctl restart ssh
+```
+
+---
+
+### hostapd falla con "Unit is masked"
+
+```bash
+sudo systemctl unmask hostapd
+sudo systemctl enable hostapd
+sudo /usr/local/bin/modo-hotspot
+```
+
+---
+
+### SSH conecta pero el Pi no es accesible por red
+
+La IP `192.168.4.1` todavía está en `wlan0`:
+```bash
+sudo ip addr del 192.168.4.1/24 dev wlan0
+```
+
+---
+
+## TODOs pendientes
+
+- `app.py` ~línea 125: descomentar lanzamiento del pipeline en hilo
+- `api_report()`: reemplazar placeholder por PDF real (weasyprint o reportlab)
 - Base de datos SQLite para persistir sesiones y grabaciones entre reinicios
+- Panel de dispositivo: campo para cambiar SSID/contraseña del modo dev sin editar archivos
