@@ -398,6 +398,25 @@ def api_reboot():
     return jsonify({"ok": True})
 
 
+@app.route("/api/device/devmode", methods=["POST"])
+def api_devmode():
+    """Activa modo desarrollo: desactiva hotspot y conecta al Wi-Fi de casa."""
+    if not IS_PI:
+        return jsonify({"ok": True, "simulated": True})
+    try:
+        subprocess.Popen(["sudo", "/usr/local/bin/modo-dev"])
+        log.info("Modo desarrollo activado desde la interfaz.")
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+    if not IS_PI:
+        log.info("Reinicio simulado (no es Pi).")
+        return jsonify({"ok": True, "simulated": True})
+    log.info("Reiniciando dispositivo.")
+    subprocess.Popen(["sudo", "reboot"])
+    return jsonify({"ok": True})
+
+
 @app.route("/api/device/status")
 def api_device_status():
     uptime_seconds = int(time.time() - SERVER_START_TIME)

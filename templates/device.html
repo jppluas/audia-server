@@ -137,6 +137,27 @@
   {% endif %}
 </div>
 
+<!-- Modo desarrollo (solo visible en Pi) -->
+{% if is_pi %}
+<div class="card" style="border: 1.5px dashed rgba(27,58,92,0.2);">
+  <div class="card-header">
+    <span class="card-icon amber">🛠</span>
+    <div>
+      <p class="card-title">Modo desarrollo</p>
+      <p class="card-subtitle">Solo para pruebas — activa Wi-Fi y SSH</p>
+    </div>
+  </div>
+  <p style="font-size:0.82rem; color:var(--gray-700); margin-bottom:14px; line-height:1.5;">
+    Desactiva el hotspot y conecta el Pi a la red de casa para acceso SSH.
+    Al reiniciar vuelve automáticamente al modo hotspot.
+  </p>
+  <button class="btn btn-amber btn-full" id="btn-devmode">
+    📡 Activar Wi-Fi y SSH
+  </button>
+  <p id="devmode-status" style="margin-top:10px; font-size:0.78rem; color:var(--gray-400); text-align:center; min-height:18px;"></p>
+</div>
+{% endif %}
+
 {% endblock %}
 
 {% block scripts %}
@@ -340,6 +361,39 @@
     }
     setMicState("stopped");
   });
+
+  // ── Modo desarrollo ────────────────────────────────────────────────────
+  const btnDevmode    = document.getElementById("btn-devmode");
+  const devmodeStatus = document.getElementById("devmode-status");
+
+  if (btnDevmode) {
+    btnDevmode.addEventListener("click", () => {
+      FS.confirm({
+        title: "¿Activar modo desarrollo?",
+        body: "Se desactivará el hotspot FonoScreen y el Pi se conectará al Wi-Fi de casa. La app dejará de ser accesible desde este celular. Al reiniciar vuelve al modo normal.",
+        confirmLabel: "Activar",
+        confirmClass: "btn-amber",
+        onConfirm: async () => {
+          btnDevmode.disabled = true;
+          btnDevmode.innerHTML = '<span class="spinner"></span> Activando...';
+          const { ok, data } = await FS.api("/api/device/devmode", "POST");
+          if (ok && data.ok) {
+            devmodeStatus.textContent = data.simulated
+              ? "Simulado (laptop de desarrollo)."
+              : "Modo desarrollo activado. El Pi se conectará al Wi-Fi en unos segundos.";
+            devmodeStatus.style.color = "var(--teal)";
+            btnDevmode.textContent = "📡 Activar Wi-Fi y SSH";
+            btnDevmode.disabled = false;
+          } else {
+            devmodeStatus.textContent = data?.error || "Error al activar modo desarrollo.";
+            devmodeStatus.style.color = "var(--red)";
+            btnDevmode.disabled = false;
+            btnDevmode.textContent = "📡 Activar Wi-Fi y SSH";
+          }
+        },
+      });
+    });
+  }
 
   // ── Reiniciar / Apagar ─────────────────────────────────────────────────
   btnReboot.addEventListener("click", () => {
