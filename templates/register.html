@@ -2,11 +2,26 @@
 {% block title %}Registro — FonoScreen{% endblock %}
 
 {% block header_action %}
-<a href="{{ url_for('device_panel') }}" class="header-action">⚙ Dispositivo</a>
+<div style="display:flex; gap:8px;">
+  <a href="{{ url_for('historial') }}" class="header-action">🗂 Historial</a>
+  <a href="{{ url_for('device_panel') }}" class="header-action">⚙ Dispositivo</a>
+</div>
 {% endblock %}
 
 {% block content %}
 
+<!-- Banner de espacio bajo (se muestra si el servidor avisa) -->
+<div id="space-warning" style="display:none; background:var(--red-light);
+     border:1.5px solid rgba(192,57,43,0.3); border-radius:var(--radius-sm);
+     padding:12px 16px; font-size:0.85rem; color:var(--red); line-height:1.5;">
+  <strong>⚠ Espacio en disco bajo.</strong>
+  Solo quedan <span id="space-sessions-remaining">—</span> sesión(es) disponibles.
+  Libere espacio borrando audios desde
+  <a href="/historial" style="color:var(--red); font-weight:700;">el historial</a>
+  antes de continuar.
+</div>
+
+<!-- Datos del niño -->
 <div class="card">
   <div class="card-header">
     <span class="card-icon blue">👤</span>
@@ -19,14 +34,14 @@
   <div style="display:flex; flex-direction:column; gap:14px;">
     <div class="field">
       <label for="f-name">Nombre completo</label>
-      <input type="text" id="f-name" placeholder="Ej. María José Vargas" autocomplete="off"
-             autocorrect="off" spellcheck="false" inputmode="text">
+      <input type="text" id="f-name" placeholder="Ej. María José Vargas"
+             autocomplete="off" autocorrect="off" spellcheck="false" inputmode="text">
     </div>
 
     <div class="field-row">
       <div class="field">
         <label for="f-dob">Fecha de nacimiento</label>
-        <input type="date" id="f-dob" max="{{ today }}">
+        <input type="date" id="f-dob">
       </div>
       <div class="field">
         <label for="f-gender">Género</label>
@@ -38,14 +53,10 @@
         </select>
       </div>
     </div>
-
-    <div class="field">
-      <label for="f-notes">Anamnesis / observaciones <span style="font-weight:400;color:var(--gray-400)">(opcional)</span></label>
-      <textarea id="f-notes" placeholder="Historial relevante, condiciones conocidas, etc."></textarea>
-    </div>
   </div>
 </div>
 
+<!-- Edad calculada -->
 <div id="age-display" style="display:none;" class="card" style="padding:14px 20px;">
   <div style="display:flex; align-items:center; justify-content:space-between;">
     <span style="font-size:0.85rem; color:var(--gray-700);">Edad calculada</span>
@@ -57,6 +68,136 @@
   </div>
 </div>
 
+<!-- Anamnesis -->
+<div class="card">
+  <div class="card-header">
+    <span class="card-icon teal">📋</span>
+    <div>
+      <p class="card-title">Anamnesis</p>
+      <p class="card-subtitle">Informativa — no afecta el puntaje</p>
+    </div>
+  </div>
+
+  <div style="display:flex; flex-direction:column; gap:18px;">
+
+    <!-- 1. Historial de otitis -->
+    <div class="field">
+      <label>1. ¿El niño tiene historial de otitis?</label>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:4px;">
+        <label class="toggle-option" data-group="otitis" data-value="0">
+          <input type="radio" name="otitis" value="0" checked> No
+        </label>
+        <label class="toggle-option" data-group="otitis" data-value="1">
+          <input type="radio" name="otitis" value="1"> Sí
+        </label>
+      </div>
+    </div>
+
+    <!-- 2. Diagnóstico auditivo previo -->
+    <div class="field">
+      <label>2. ¿Tiene diagnóstico auditivo previo?</label>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:4px;">
+        <label class="toggle-option" data-group="hearing" data-value="no">
+          <input type="radio" name="hearing_dx_yn" value="no" checked> No
+        </label>
+        <label class="toggle-option" data-group="hearing" data-value="yes">
+          <input type="radio" name="hearing_dx_yn" value="yes"> Sí
+        </label>
+      </div>
+      <div id="hearing-detail" style="display:none; margin-top:8px;">
+        <select id="f-hearing-dx" class="field-select">
+          <option value="">— Seleccione el diagnóstico —</option>
+          <option value="Hipoacusia conductiva leve">Hipoacusia conductiva leve</option>
+          <option value="Hipoacusia conductiva moderada">Hipoacusia conductiva moderada</option>
+          <option value="Hipoacusia neurosensorial leve">Hipoacusia neurosensorial leve</option>
+          <option value="Hipoacusia neurosensorial moderada">Hipoacusia neurosensorial moderada</option>
+          <option value="Hipoacusia neurosensorial severa">Hipoacusia neurosensorial severa</option>
+          <option value="Hipoacusia neurosensorial profunda">Hipoacusia neurosensorial profunda</option>
+          <option value="Hipoacusia mixta">Hipoacusia mixta</option>
+          <option value="Otitis media con efusión">Otitis media con efusión (oído con líquido)</option>
+          <option value="Trastorno de procesamiento auditivo">Trastorno de procesamiento auditivo (APD)</option>
+          <option value="Otro">Otro</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- 3. Idioma en el hogar -->
+    <div class="field">
+      <label>3. ¿Qué idioma(s) se hablan en el hogar?</label>
+      <p style="font-size:0.75rem; color:var(--gray-400); margin-top:2px; margin-bottom:6px;">
+        Puede seleccionar varios
+      </p>
+      <div id="lang-options" style="display:flex; flex-direction:column; gap:6px;">
+        <label class="check-option"><input type="checkbox" name="lang" value="Español" checked> Español</label>
+        <label class="check-option"><input type="checkbox" name="lang" value="Inglés"> Inglés</label>
+        <label class="check-option"><input type="checkbox" name="lang" value="Kichwa"> Kichwa</label>
+        <label class="check-option"><input type="checkbox" name="lang" value="Chino mandarín"> Chino mandarín</label>
+        <label class="check-option"><input type="checkbox" name="lang" value="Árabe"> Árabe</label>
+        <label class="check-option"><input type="checkbox" name="lang" value="Hindi"> Hindi</label>
+        <label class="check-option"><input type="checkbox" name="lang" value="Portugués"> Portugués</label>
+        <label class="check-option"><input type="checkbox" name="lang" value="Francés"> Francés</label>
+        <label class="check-option"><input type="checkbox" name="lang" value="Alemán"> Alemán</label>
+        <label class="check-option"><input type="checkbox" name="lang" value="Otro"> Otro</label>
+      </div>
+    </div>
+
+    <!-- 4. Antecedentes familiares -->
+    <div class="field">
+      <label>4. ¿Hay antecedentes familiares de problemas del habla?</label>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:4px;">
+        <label class="toggle-option" data-group="family" data-value="0">
+          <input type="radio" name="family_history" value="0" checked> No
+        </label>
+        <label class="toggle-option" data-group="family" data-value="1">
+          <input type="radio" name="family_history" value="1"> Sí
+        </label>
+      </div>
+      <div id="family-detail" style="display:none; margin-top:8px;">
+        <select id="f-family-who" class="field-select">
+          <option value="">— ¿Quién? —</option>
+          <option value="Padre">Padre</option>
+          <option value="Madre">Madre</option>
+          <option value="Hermano/a">Hermano/a</option>
+          <option value="Abuelo/a">Abuelo/a</option>
+          <option value="Tío/a">Tío/a</option>
+          <option value="Otro familiar">Otro familiar</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- 5. Atención fonoaudiológica previa -->
+    <div class="field">
+      <label>5. ¿El niño está o estuvo en terapia de lenguaje?</label>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:4px;">
+        <label class="toggle-option" data-group="therapy" data-value="0">
+          <input type="radio" name="prior_therapy" value="0" checked> No
+        </label>
+        <label class="toggle-option" data-group="therapy" data-value="1">
+          <input type="radio" name="prior_therapy" value="1"> Sí
+        </label>
+      </div>
+    </div>
+
+    <!-- Observaciones libres -->
+    <div class="field">
+      <label for="f-notes">Observaciones adicionales
+        <span style="font-weight:400; color:var(--gray-400);">(opcional)</span>
+      </label>
+      <textarea id="f-notes"
+                placeholder="Cualquier información relevante no cubierta arriba."></textarea>
+    </div>
+
+  </div>
+</div>
+
+<!-- Botón de autorrelleno (solo en desarrollo) -->
+<div id="dev-autofill" style="display:none;">
+  <button class="btn btn-outline btn-full btn-sm" id="btn-autofill"
+          style="border-style:dashed; color:var(--gray-700);">
+    🧪 Llenar con datos de prueba
+  </button>
+</div>
+
 <button class="btn btn-primary btn-full btn-lg" id="btn-start" disabled>
   Iniciar evaluación
 </button>
@@ -66,6 +207,7 @@
 {% block scripts %}
 <script>
 (function () {
+
   const nameEl   = document.getElementById("f-name");
   const dobEl    = document.getElementById("f-dob");
   const genderEl = document.getElementById("f-gender");
@@ -75,51 +217,176 @@
   const ageText  = document.getElementById("age-text");
   const ageWarn  = document.getElementById("age-warning");
 
-  // Establece hoy como máximo en el campo fecha
   dobEl.max = new Date().toISOString().split("T")[0];
 
+  // ── Chequeo de espacio al cargar ──────────────────────────────────────
+  (async () => {
+    try {
+      const { ok, data } = await FS.api("/api/device/space");
+      if (ok && data.low_space) {
+        document.getElementById("space-sessions-remaining").textContent =
+          data.sessions_remaining;
+        document.getElementById("space-warning").style.display = "block";
+      }
+    } catch {}
+  })();
+
+  // ── Toggle options (radios estilizados) ───────────────────────────────
+  function updateToggleStyle(radio) {
+    const label = radio.closest(".toggle-option");
+    if (!label) return;
+    label.style.background  = radio.checked ? "var(--blue)"  : "transparent";
+    label.style.color       = radio.checked ? "var(--white)" : "var(--blue)";
+    label.style.borderColor = radio.checked ? "var(--blue)"  : "rgba(27,58,92,0.25)";
+  }
+
+  document.querySelectorAll(".toggle-option input[type=radio]").forEach(r => {
+    updateToggleStyle(r);
+    r.addEventListener("change", () => {
+      document.querySelectorAll(`input[name="${r.name}"]`).forEach(updateToggleStyle);
+    });
+  });
+
+  // ── Check options (checkboxes estilizados) ────────────────────────────
+  function updateCheckStyle(cb) {
+    const label = cb.closest(".check-option");
+    if (!label) return;
+    label.style.background  = cb.checked ? "var(--blue-light)" : "transparent";
+    label.style.color       = cb.checked ? "var(--blue)"       : "var(--gray-700)";
+    label.style.borderColor = cb.checked ? "var(--blue)"       : "rgba(27,58,92,0.18)";
+    label.style.fontWeight  = cb.checked ? "600"               : "400";
+  }
+
+  document.querySelectorAll(".check-option input[type=checkbox]").forEach(cb => {
+    updateCheckStyle(cb);
+    cb.addEventListener("change", () => updateCheckStyle(cb));
+  });
+
+  // ── Campos condicionales ──────────────────────────────────────────────
+  document.querySelectorAll("input[name='hearing_dx_yn']").forEach(r => {
+    r.addEventListener("change", () => {
+      const show = r.value === "yes" && r.checked;
+      document.getElementById("hearing-detail").style.display = show ? "block" : "none";
+      if (!show) document.getElementById("f-hearing-dx").value = "";
+    });
+  });
+
+  document.querySelectorAll("input[name='family_history']").forEach(r => {
+    r.addEventListener("change", () => {
+      const show = r.value === "1" && r.checked;
+      document.getElementById("family-detail").style.display = show ? "block" : "none";
+      if (!show) document.getElementById("f-family-who").value = "";
+    });
+  });
+
+  // ── Edad ──────────────────────────────────────────────────────────────
   function calcAge(dobStr) {
     if (!dobStr) return null;
-    const dob  = new Date(dobStr + "T00:00:00");
-    const now  = new Date();
-    let years  = now.getFullYear() - dob.getFullYear();
+    const dob = new Date(dobStr + "T00:00:00"), now = new Date();
+    let years = now.getFullYear() - dob.getFullYear();
     let months = now.getMonth() - dob.getMonth();
     if (months < 0) { years--; months += 12; }
     return { years, months, total: years * 12 + months };
   }
 
   function validate() {
-    const name   = nameEl.value.trim();
-    const dob    = dobEl.value;
-    const gender = genderEl.value;
-    const age    = calcAge(dob);
-
-    if (dob && age) {
+    const age = calcAge(dobEl.value);
+    if (dobEl.value && age) {
       ageDisp.style.display = "block";
       ageText.textContent = `${age.years} años ${age.months} meses`;
-      const outOfRange = age.total < 36 || age.total > 71;
-      ageWarn.style.display = outOfRange ? "block" : "none";
+      ageWarn.style.display = (age.total < 36 || age.total > 71) ? "block" : "none";
     } else {
       ageDisp.style.display = "none";
     }
-
-    btnStart.disabled = !(name.length >= 2 && dob && gender);
+    btnStart.disabled = !(nameEl.value.trim().length >= 2 && dobEl.value && genderEl.value);
   }
 
   [nameEl, dobEl, genderEl].forEach(el => el.addEventListener("input", validate));
   validate();
 
-  btnStart.addEventListener("click", async () => {
-    const name   = nameEl.value.trim();
-    const dob    = dobEl.value;
-    const gender = genderEl.value;
-    const notes  = notesEl.value.trim();
+  // ── Detectar modo debug ───────────────────────────────────────────────
+  (async () => {
+    try {
+      const r = await fetch("/dev/simulate", { method:"POST",
+        headers:{"Content-Type":"application/json"}, body:JSON.stringify({action:""}) });
+      if (r.status !== 403) document.getElementById("dev-autofill").style.display = "block";
+    } catch {}
+  })();
 
+  // ── Autorrelleno ──────────────────────────────────────────────────────
+  document.getElementById("btn-autofill").addEventListener("click", () => {
+    nameEl.value   = "John Doe";
+    dobEl.value    = "2021-03-15";
+    genderEl.value = "M";
+    notesEl.value  = "Sesión generada con datos de prueba.";
+
+    setRadio("otitis", "1");
+    setRadio("hearing_dx_yn", "yes");
+    document.getElementById("hearing-detail").style.display = "block";
+    document.getElementById("f-hearing-dx").value = "Hipoacusia conductiva leve";
+
+    // idiomas: solo español (ya viene marcado por defecto)
+    document.querySelectorAll("input[name='lang']").forEach(cb => {
+      cb.checked = cb.value === "Español";
+      updateCheckStyle(cb);
+    });
+
+    setRadio("family_history", "1");
+    document.getElementById("family-detail").style.display = "block";
+    document.getElementById("f-family-who").value = "Padre";
+
+    setRadio("prior_therapy", "0");
+
+    validate();
+    FS.showToast("Datos de prueba cargados.", "info", 2000);
+  });
+
+  function setRadio(name, value) {
+    document.querySelectorAll(`input[name="${name}"]`).forEach(r => {
+      r.checked = r.value === value;
+      updateToggleStyle(r);
+    });
+  }
+
+  // ── Recolectar anamnesis ──────────────────────────────────────────────
+  function getAnamnesis() {
+    const hearingYn  = document.querySelector("input[name='hearing_dx_yn']:checked")?.value;
+    const familyVal  = document.querySelector("input[name='family_history']:checked")?.value;
+    const langs      = [...document.querySelectorAll("input[name='lang']:checked")]
+                         .map(c => c.value);
+
+    return {
+      anamnesis_otitis:
+        parseInt(document.querySelector("input[name='otitis']:checked")?.value || "0"),
+      anamnesis_hearing_dx:
+        hearingYn === "yes"
+          ? (document.getElementById("f-hearing-dx").value || null)
+          : null,
+      anamnesis_home_language:
+        langs.length > 0 ? langs.join(", ") : "Español",
+      anamnesis_family_history:
+        parseInt(familyVal || "0"),
+      anamnesis_family_who:
+        familyVal === "1"
+          ? (document.getElementById("f-family-who").value || null)
+          : null,
+      anamnesis_prior_therapy:
+        parseInt(document.querySelector("input[name='prior_therapy']:checked")?.value || "0"),
+    };
+  }
+
+  // ── Iniciar sesión ────────────────────────────────────────────────────
+  btnStart.addEventListener("click", async () => {
     btnStart.disabled = true;
     btnStart.innerHTML = '<span class="spinner"></span> Iniciando...';
 
-    const { ok, data } = await FS.api("/api/session/start", "POST",
-      { name, dob, gender, notes });
+    const { ok, data } = await FS.api("/api/session/start", "POST", {
+      name:   nameEl.value.trim(),
+      dob:    dobEl.value,
+      gender: genderEl.value,
+      notes:  notesEl.value.trim(),
+      ...getAnamnesis(),
+    });
 
     if (ok && data.ok) {
       window.location.href = "/sesion";
@@ -129,6 +396,67 @@
       btnStart.textContent = "Iniciar evaluación";
     }
   });
+
 })();
 </script>
+
+<style>
+.toggle-option {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid rgba(27,58,92,0.25);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  text-align: center;
+  -webkit-tap-highlight-color: transparent;
+}
+.toggle-option input[type=radio] {
+  position: absolute; opacity: 0; width: 0; height: 0;
+}
+
+.check-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid rgba(27,58,92,0.18);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.check-option input[type=checkbox] {
+  width: 16px; height: 16px;
+  accent-color: var(--blue);
+  flex-shrink: 0;
+}
+
+.field-select {
+  width: 100%;
+  border: 1.5px solid rgba(27,58,92,0.18);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  font-size: 0.95rem;
+  font-family: var(--font);
+  color: var(--gray-900);
+  background: var(--white);
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%234A5568' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  padding-right: 36px;
+}
+.field-select:focus {
+  outline: none;
+  border-color: var(--teal);
+  box-shadow: 0 0 0 3px rgba(42,157,143,0.15);
+}
+</style>
 {% endblock %}

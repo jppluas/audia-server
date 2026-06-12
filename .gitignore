@@ -171,6 +171,7 @@ logs/
 
 # Exports (PDFs generados y archivos de sesión)
 exports/
+recordings/
 
 # Archivos de prueba de audio
 /tmp/fonoscreen_*.wav

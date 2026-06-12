@@ -31,6 +31,25 @@
       <span class="status-key">Uso de disco</span>
       <span class="status-val">{{ disk.percent }}</span>
     </div>
+    <div class="status-row" style="{% if low_space %}background:var(--red-light); margin:4px -8px; padding:8px 8px; border-radius:var(--radius-sm);{% endif %}">
+      <span class="status-key">Sesiones restantes estimadas
+        <span style="font-size:0.7rem; color:var(--gray-400); display:block; margin-top:1px;">
+          Peor caso: {{ session_size_mb }} MB/sesión
+        </span>
+      </span>
+      <span class="status-val" style="{% if low_space %}color:var(--red);{% elif sessions_remaining < 20 %}color:var(--amber);{% else %}color:var(--teal);{% endif %}">
+        {% if sessions_remaining < 0 %}
+          —
+        {% else %}
+          {{ sessions_remaining }}
+          {% if low_space %}
+            <span class="badge badge-red" style="font-size:0.68rem; margin-left:4px;">
+              ⚠ Espacio bajo
+            </span>
+          {% endif %}
+        {% endif %}
+      </span>
+    </div>
     <div class="status-row">
       <span class="status-key">Hora del servidor</span>
       <span class="status-val" id="sys-time">—</span>

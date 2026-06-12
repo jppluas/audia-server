@@ -22,7 +22,10 @@
       <span>FonoScreen</span>
     </a>
     {% block header_action %}
-    <a href="{{ url_for('device_panel') }}" class="header-action">Dispositivo</a>
+    <div style="display:flex; gap:8px;">
+      <a href="{{ url_for('historial') }}" class="header-action">🗂 Historial</a>
+      <a href="{{ url_for('device_panel') }}" class="header-action">⚙ Dispositivo</a>
+    </div>
     {% endblock %}
   </header>
 

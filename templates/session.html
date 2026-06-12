@@ -3,7 +3,7 @@
 
 {% block header_action %}
 <span class="badge badge-teal" style="font-family:var(--font-mono); font-size:0.75rem;">
-  #{{ state.session_id }}
+  En curso
 </span>
 {% endblock %}
 
@@ -13,8 +13,11 @@
 <div class="card" style="padding: 14px 20px;">
   <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
     <div style="min-width:0;">
-      <p style="font-weight:700; font-size:1rem; color:var(--blue); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+      <p style="font-weight:700; font-size:1.1rem; color:var(--blue);
+         white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
         {{ state.child.name }}
+        <span style="font-size:0.78rem; font-weight:400; color:var(--gray-400);
+               font-family:var(--font-mono); margin-left:6px;">#{{ state.session_id }}</span>
       </p>
       <p style="font-size:0.78rem; color:var(--gray-400); margin-top:2px;">
         {{ state.child.dob }}

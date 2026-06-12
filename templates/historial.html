@@ -1,0 +1,610 @@
+{% extends "base.html" %}
+{% block title %}Historial — FonoScreen{% endblock %}
+
+{% block header_action %}
+<a href="/" class="header-action">← Sesión</a>
+{% endblock %}
+
+{% block content %}
+
+<!-- Encabezado -->
+<div class="card" style="padding:16px 20px;">
+  <div class="card-header" style="margin-bottom:0;">
+    <span class="card-icon blue">🗂</span>
+    <div>
+      <p class="card-title">Historial de sesiones</p>
+      <p class="card-subtitle" id="session-count">
+        {{ sessions | length }} sesión{{ 'es' if sessions | length != 1 else '' }} registrada{{ 's' if sessions | length != 1 else '' }}
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- Controles de prueba (solo en desarrollo) -->
+<div id="dev-controls" style="display:none;" class="card" style="border: 1.5px dashed rgba(27,58,92,0.2);">
+  <div class="card-header">
+    <span class="card-icon amber">🧪</span>
+    <div>
+      <p class="card-title">Pruebas de base de datos</p>
+      <p class="card-subtitle">Solo visible en modo desarrollo</p>
+    </div>
+  </div>
+  <div style="display:flex; flex-direction:column; gap:10px;">
+    <button class="btn btn-amber btn-full" id="btn-seed">
+      ➕ Insertar sesión de prueba
+    </button>
+    <p id="seed-status" style="font-size:0.78rem; color:var(--gray-400); text-align:center; min-height:18px;"></p>
+  </div>
+</div>
+
+<!-- Lista de sesiones -->
+<div id="sessions-list">
+  {% if sessions %}
+    {% for s in sessions %}
+    <div class="card session-card" data-id="{{ s.session_id }}"
+         style="cursor:pointer; transition: box-shadow 0.15s;"
+         onclick="openSession('{{ s.session_id }}')">
+      <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px;">
+        <div style="min-width:0; flex:1;">
+          <p style="font-weight:700; font-size:1rem; color:var(--blue);
+             white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+            {{ s.child_name }}
+            <span style="font-size:0.75rem; font-weight:400; color:var(--gray-400);
+                   font-family:var(--font-mono); margin-left:5px;">#{{ s.session_id }}</span>
+          </p>
+          <p style="font-size:0.78rem; color:var(--gray-400); margin-top:2px;">
+            {{ s.child_dob }}
+            {% if s.child_age_months %}
+              · {{ (s.child_age_months // 12) }}a {{ (s.child_age_months % 12) }}m
+            {% endif %}
+            · {{ 'F' if s.child_gender == 'F' else ('M' if s.child_gender == 'M' else 'O') }}
+          </p>
+          <p style="font-size:0.75rem; color:var(--gray-400); margin-top:4px;
+             font-family:var(--font-mono);">{{ s.started_at[:10] }}</p>
+        </div>
+        <div style="display:flex; flex-direction:column; align-items:flex-end; gap:6px; flex-shrink:0;">
+          {% if s.status == 'done' %}
+            <span class="badge badge-teal">Completada</span>
+            {% if s.pffb is not none %}
+            <span style="font-size:0.82rem; font-weight:700; color:var(--blue);
+                   font-family:var(--font-mono);">
+              PFFB {{ s.pffb }}%
+            </span>
+            {% endif %}
+          {% elif s.status == 'cancelled' %}
+            <span class="badge badge-red">Cancelada</span>
+          {% else %}
+            <span class="badge badge-amber">Activa</span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  {% else %}
+    <div class="card" style="text-align:center; padding:32px 20px;">
+      <p style="font-size:2rem; margin-bottom:12px;">📭</p>
+      <p style="font-size:0.9rem; color:var(--gray-700); font-weight:600;">
+        No hay sesiones registradas aún
+      </p>
+      <p style="font-size:0.82rem; color:var(--gray-400); margin-top:4px;">
+        Las sesiones completadas aparecerán aquí
+      </p>
+    </div>
+  {% endif %}
+</div>
+
+<!-- Modal de detalle de sesión -->
+<div id="session-modal" class="modal-overlay" role="dialog" aria-modal="true">
+  <div class="modal" style="max-width:420px; max-height:85vh; overflow-y:auto; padding:20px;">
+
+    <!-- Encabezado del modal -->
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+      <p class="modal-title" id="modal-name" style="margin-bottom:0;">—</p>
+      <button onclick="closeSessionModal()"
+              style="background:none; border:none; font-size:1.2rem; cursor:pointer;
+                     color:var(--gray-400); padding:4px;">✕</button>
+    </div>
+
+    <!-- Datos del niño -->
+    <div id="modal-child-info" style="margin-bottom:16px; padding:12px;
+         background:var(--blue-light); border-radius:var(--radius-sm);">
+      <div class="status-row" style="border:none; padding:4px 0;">
+        <span class="status-key">Fecha de nacimiento</span>
+        <span class="status-val" id="modal-dob">—</span>
+      </div>
+      <div class="status-row" style="border:none; padding:4px 0;">
+        <span class="status-key">Edad</span>
+        <span class="status-val" id="modal-age">—</span>
+      </div>
+      <div class="status-row" style="border:none; padding:4px 0;">
+        <span class="status-key">Género</span>
+        <span class="status-val" id="modal-gender">—</span>
+      </div>
+      <div class="status-row" style="border:none; padding:4px 0;">
+        <span class="status-key">Fecha de evaluación</span>
+        <span class="status-val" id="modal-date">—</span>
+      </div>
+      <div id="modal-notes-row" class="status-row" style="border:none; padding:4px 0; display:none;">
+        <span class="status-key" style="margin-bottom:6px;">Anamnesis</span>
+        <table id="modal-anamnesis-table"
+               style="width:100%; border-collapse:collapse; font-size:0.8rem; margin-top:2px;">
+          <tbody id="modal-anamnesis"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Resultado global -->
+    <div id="modal-result-block" style="display:none; margin-bottom:16px; padding:14px;
+         border-radius:var(--radius-sm); text-align:center;">
+      <p style="font-size:0.75rem; font-weight:600; text-transform:uppercase;
+         letter-spacing:0.06em; margin-bottom:6px; opacity:0.7;" id="modal-level-label">—</p>
+      <p style="font-size:2rem; font-weight:800; font-family:var(--font-mono);"
+         id="modal-pffb">—</p>
+      <p style="font-size:0.82rem; margin-top:4px;" id="modal-level">—</p>
+    </div>
+
+    <!-- Tabla de fonemas -->
+    <div id="modal-phonemes-block" style="display:none; margin-bottom:16px;">
+      <p style="font-size:0.82rem; font-weight:700; color:var(--blue);
+         margin-bottom:8px; text-transform:uppercase; letter-spacing:0.04em;">
+        Desempeño por fonema
+      </p>
+      <table style="width:100%; border-collapse:collapse; font-size:0.82rem;">
+        <thead>
+          <tr style="border-bottom:2px solid rgba(27,58,92,0.1);">
+            <th style="text-align:left; padding:6px 4px; color:var(--gray-700); font-weight:600;">Fonema</th>
+            <th style="text-align:right; padding:6px 4px; color:var(--gray-700); font-weight:600;">PFF%</th>
+            <th style="text-align:center; padding:6px 4px; color:var(--gray-700); font-weight:600;">Nivel</th>
+            <th style="text-align:left; padding:6px 4px; color:var(--gray-700); font-weight:600;">Error predominante</th>
+          </tr>
+        </thead>
+        <tbody id="modal-phonemes-tbody"></tbody>
+      </table>
+    </div>
+
+    <!-- Tabla de palabras -->
+    <div id="modal-items-block" style="display:none; margin-bottom:16px;">
+      <p style="font-size:0.82rem; font-weight:700; color:var(--blue);
+         margin-bottom:8px; text-transform:uppercase; letter-spacing:0.04em;">
+        Detalle por palabra
+      </p>
+      <table style="width:100%; border-collapse:collapse; font-size:0.78rem;">
+        <thead>
+          <tr style="border-bottom:2px solid rgba(27,58,92,0.1);">
+            <th style="text-align:left; padding:5px 4px; color:var(--gray-700); font-weight:600;">Esperada</th>
+            <th style="text-align:left; padding:5px 4px; color:var(--gray-700); font-weight:600;">Producida</th>
+            <th style="text-align:center; padding:5px 4px; color:var(--gray-700); font-weight:600;">Resultado</th>
+            <th style="text-align:left; padding:5px 4px; color:var(--gray-700); font-weight:600;">Error</th>
+            <th style="text-align:center; padding:5px 4px; color:var(--gray-700); font-weight:600;">🔊</th>
+          </tr>
+        </thead>
+        <tbody id="modal-items-tbody"></tbody>
+      </table>
+    </div>
+
+    <!-- Notas Gemma -->
+    <div id="modal-report-block" style="display:none; margin-bottom:16px;">
+      <p style="font-size:0.82rem; font-weight:700; color:var(--blue);
+         margin-bottom:8px; text-transform:uppercase; letter-spacing:0.04em;">
+        Nota clínica
+      </p>
+      <p id="modal-nota-clinica"
+         style="font-size:0.82rem; color:var(--gray-700); line-height:1.55;
+                background:var(--gray-100); padding:12px; border-radius:var(--radius-sm);">—</p>
+
+      <p style="font-size:0.82rem; font-weight:700; color:var(--blue);
+         margin:14px 0 8px; text-transform:uppercase; letter-spacing:0.04em;">
+        Nota para representantes
+      </p>
+      <p id="modal-nota-rep"
+         style="font-size:0.82rem; color:var(--gray-700); line-height:1.55;
+                background:var(--gray-100); padding:12px; border-radius:var(--radius-sm);">—</p>
+
+      <p style="font-size:0.72rem; color:var(--gray-400); margin-top:12px;
+         font-style:italic; line-height:1.45; text-align:center;">
+        Los resultados de este cribado no constituyen un diagnóstico clínico
+        y deben ser interpretados por un profesional de la salud.
+      </p>
+    </div>
+
+    <!-- Botones del modal -->
+    <div style="display:flex; flex-direction:column; gap:8px; margin-top:4px;">
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+        <button class="btn btn-blue btn-sm" onclick="printSession()">
+          🖨 Exportar PDF
+        </button>
+        <button class="btn btn-outline btn-sm" onclick="exportZip()">
+          📦 Exportar ZIP
+        </button>
+      </div>
+      <button class="btn btn-outline btn-sm" id="modal-btn-json"
+              onclick="exportJson()" style="font-size:0.8rem;">
+        { } Exportar JSON
+      </button>
+      <hr style="border:none; border-top:1px solid rgba(27,58,92,0.08); margin:2px 0;">
+      <button id="modal-btn-delete-audio" class="btn btn-sm"
+              style="color:#92600A; border:1.5px solid rgba(233,185,73,0.5);
+                     background:var(--amber-light);"
+              onclick="deleteAudio()">
+        🗑 Borrar audios (conservar resultado)
+      </button>
+      <button id="modal-btn-delete" class="btn btn-sm"
+              style="color:var(--red); border:1.5px solid rgba(192,57,43,0.3);
+                     background:transparent;"
+              onclick="deleteSession()">
+        🗑 Borrar sesión completa
+      </button>
+    </div>
+
+    <div id="modal-loading" style="text-align:center; padding:20px 0; display:none;">
+      <span class="spinner" style="border-color:rgba(27,58,92,0.2); border-top-color:var(--blue);"></span>
+    </div>
+
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+
+  // ── Detectar modo desarrollo ───────────────────────────────────────────
+  // El endpoint /dev/simulate solo existe en debug; lo usamos como señal.
+  let isDebug = false;
+  (async () => {
+    try {
+      const r = await fetch("/dev/simulate", { method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "" }) });
+      isDebug = r.status !== 403;
+    } catch { isDebug = false; }
+    if (isDebug) {
+      document.getElementById("dev-controls").style.display = "block";
+    }
+  })();
+
+  // ── Insertar sesión de prueba ──────────────────────────────────────────
+  document.getElementById("btn-seed").addEventListener("click", async () => {
+    const btn = document.getElementById("btn-seed");
+    const status = document.getElementById("seed-status");
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Insertando...';
+    status.textContent = "";
+
+    const { ok, data } = await FS.api("/api/historial/seed", "POST");
+    btn.disabled = false;
+    btn.textContent = "➕ Insertar sesión de prueba";
+
+    if (ok && data.ok) {
+      status.textContent = `✓ Sesión #${data.session_id} insertada. Recarga para verla.`;
+      status.style.color = "var(--teal)";
+      setTimeout(() => location.reload(), 1500);
+    } else {
+      status.textContent = data.error || "Error al insertar sesión.";
+      status.style.color = "var(--red)";
+    }
+  });
+
+  // ── Modal de detalle ───────────────────────────────────────────────────
+  let currentSessionId = null;
+
+  window.openSession = async function (sessionId) {
+    currentSessionId = sessionId;
+    const modal = document.getElementById("session-modal");
+    const loading = document.getElementById("modal-loading");
+
+    // Resetear y abrir
+    resetModal();
+    loading.style.display = "block";
+    modal.classList.add("open");
+
+    const { ok, data } = await FS.api(`/api/historial/session/${sessionId}`);
+    loading.style.display = "none";
+
+    if (!ok) {
+      FS.showToast(data.error || "Error al cargar sesión.", "error");
+      modal.classList.remove("open");
+      return;
+    }
+
+    fillModal(data);
+
+    // Mostrar botón de eliminar solo en debug
+    if (isDebug) {
+      document.getElementById("modal-btn-delete").style.display = "block";
+    }
+  };
+
+  window.closeSessionModal = function () {
+    document.getElementById("session-modal").classList.remove("open");
+    currentSessionId = null;
+  };
+
+  document.getElementById("session-modal").addEventListener("click", e => {
+    if (e.target === document.getElementById("session-modal")) closeSessionModal();
+  });
+
+  function resetModal() {
+    document.getElementById("modal-name").textContent = "—";
+    document.getElementById("modal-dob").textContent = "—";
+    document.getElementById("modal-age").textContent = "—";
+    document.getElementById("modal-gender").textContent = "—";
+    document.getElementById("modal-date").textContent = "—";
+    document.getElementById("modal-notes-row").style.display = "none";
+    document.getElementById("modal-result-block").style.display = "none";
+    document.getElementById("modal-phonemes-block").style.display = "none";
+    document.getElementById("modal-items-block").style.display = "none";
+    document.getElementById("modal-report-block").style.display = "none";
+    document.getElementById("modal-btn-delete").style.display = "none";
+    document.getElementById("modal-btn-delete-audio").style.display = "none";
+    document.getElementById("modal-phonemes-tbody").innerHTML = "";
+    document.getElementById("modal-items-tbody").innerHTML = "";
+  }
+
+  function fillModal(data) {
+    const s = data.session;
+
+    // Encabezado
+    document.getElementById("modal-name").textContent = s.child_name;
+    document.getElementById("modal-dob").textContent = s.child_dob;
+    document.getElementById("modal-age").textContent =
+      s.child_age_months
+        ? `${Math.floor(s.child_age_months / 12)} años ${s.child_age_months % 12} meses`
+        : "—";
+    document.getElementById("modal-gender").textContent =
+      s.child_gender === "F" ? "Femenino" : s.child_gender === "M" ? "Masculino" : "Otro";
+    document.getElementById("modal-date").textContent =
+      s.started_at ? s.started_at.slice(0, 16).replace("T", " ") : "—";
+
+    if (s.notes || s.anamnesis_otitis || s.anamnesis_hearing_dx ||
+        s.anamnesis_family_history || s.anamnesis_prior_therapy) {
+      document.getElementById("modal-notes-row").style.display = "flex";
+      document.getElementById("modal-notes-row").style.flexDirection = "column";
+      const tbody = document.getElementById("modal-anamnesis");
+      tbody.innerHTML = "";
+
+      const rows = [
+        ["Historial de otitis",            s.anamnesis_otitis ? "Sí" : "No"],
+        ["Diagnóstico auditivo",            s.anamnesis_hearing_dx || "Ninguno"],
+        ["Idioma(s) en el hogar",           s.anamnesis_home_language || "Español"],
+        ["Antecedentes familiares del habla",
+          s.anamnesis_family_history
+            ? "Sí" + (s.notes && s.notes.includes("(") ? "" : "")
+            : "No"],
+        ["Terapia de lenguaje previa",      s.anamnesis_prior_therapy ? "Sí" : "No"],
+      ];
+      if (s.notes) rows.push(["Observaciones", s.notes.replace(/^.*\| Obs: /, "")]);
+
+      rows.forEach(([key, val]) => {
+        const tr = document.createElement("tr");
+        tr.style.borderBottom = "1px solid rgba(27,58,92,0.06)";
+        tr.innerHTML = `
+          <td style="padding:5px 6px 5px 0; color:var(--gray-400);
+              font-weight:500; white-space:nowrap; vertical-align:top;
+              width:50%;">${key}</td>
+          <td style="padding:5px 0 5px 6px; color:var(--gray-900);
+              font-weight:600; vertical-align:top;">${val}</td>`;
+        tbody.appendChild(tr);
+      });
+    }
+
+    // Resultado global
+    if (s.status === "done" && s.pffb !== null) {
+      const block = document.getElementById("modal-result-block");
+      block.style.display = "block";
+
+      const pffb = s.pffb;
+      let bgColor, textColor;
+      if (pffb > 75) {
+        bgColor = "var(--teal-light)"; textColor = "var(--teal)";
+      } else if (pffb >= 50) {
+        bgColor = "var(--amber-light)"; textColor = "#92600A";
+      } else {
+        bgColor = "var(--red-light)"; textColor = "var(--red)";
+      }
+      block.style.background = bgColor;
+      document.getElementById("modal-level-label").style.color = textColor;
+      document.getElementById("modal-pffb").style.color = textColor;
+      document.getElementById("modal-level").style.color = textColor;
+
+      document.getElementById("modal-level-label").textContent = s.level || "—";
+      document.getElementById("modal-pffb").textContent = pffb + "%";
+      document.getElementById("modal-level").textContent =
+        pffb > 75 ? "Sin acción inmediata. Seguimiento rutinario." :
+        pffb >= 50 ? "Monitoreo. Re-evaluar en 3 meses." :
+        "Derivación a psicólogo o fonoaudiólogo recomendada.";
+    }
+
+    // Fonemas
+    if (data.phoneme_summary && data.phoneme_summary.length > 0) {
+      document.getElementById("modal-phonemes-block").style.display = "block";
+      const tbody = document.getElementById("modal-phonemes-tbody");
+      data.phoneme_summary.forEach(p => {
+        const isNormal = p.level === "Normal";
+        const tr = document.createElement("tr");
+        tr.style.borderBottom = "1px solid rgba(27,58,92,0.06)";
+        tr.innerHTML = `
+          <td style="padding:6px 4px; font-family:var(--font-mono); font-weight:700;
+              color:var(--blue);">${p.phoneme}</td>
+          <td style="padding:6px 4px; text-align:right; font-weight:700;
+              font-family:var(--font-mono);
+              color:${p.pff >= 75 ? 'var(--teal)' : p.pff >= 50 ? '#92600A' : 'var(--red)'};">
+            ${p.pff}%
+          </td>
+          <td style="padding:6px 4px; text-align:center;">
+            <span class="badge ${isNormal ? 'badge-teal' : 'badge-amber'}"
+                  style="font-size:0.68rem; padding:2px 7px;">
+              ${p.level}
+            </span>
+          </td>
+          <td style="padding:6px 4px; color:var(--gray-700); font-size:0.78rem;">
+            ${p.error_predominant || "Ninguno"}
+          </td>`;
+        tbody.appendChild(tr);
+      });
+    }
+
+    if (data.items && data.items.length > 0) {
+      document.getElementById("modal-items-block").style.display = "block";
+      const tbody = document.getElementById("modal-items-tbody");
+      const hasAudio = data.session.has_audio;
+      data.items.forEach((item) => {
+        const tr = document.createElement("tr");
+        tr.style.borderBottom = "1px solid rgba(27,58,92,0.05)";
+        const resultColor =
+          item.result === "correct" ? "var(--teal)" :
+          item.result === "not_evaluable" ? "var(--gray-400)" : "var(--red)";
+        const resultLabel =
+          item.result === "correct" ? "Correcto" :
+          item.result === "not_evaluable" ? "No evaluable" :
+          item.error_type || "Error";
+
+        const audioBtn = hasAudio
+          ? `<button onclick="playAudio('${currentSessionId}','${item.word_expected}')"
+               style="background:none; border:none; cursor:pointer; font-size:1rem;
+                      padding:2px 4px; color:var(--blue);" title="Reproducir">▶</button>`
+          : `<span title="Audio no disponible"
+               style="color:var(--gray-400); font-size:0.85rem;">—</span>`;
+
+        const resultStr =
+          item.result === "correct"       ? "Correcto" :
+          item.result === "not_evaluable" ? "No evaluable" : "Error";
+        const errorStr =
+          item.result === "correct" ? "" :
+          item.error_type || (item.result !== "correct" ? "—" : "");
+
+        tr.innerHTML = `
+          <td style="padding:5px 4px; font-weight:600; color:var(--blue);">
+            ${item.word_expected}
+            <span style="font-size:0.7rem; color:var(--gray-400);
+                font-family:var(--font-mono);">${item.phoneme}</span>
+          </td>
+          <td style="padding:5px 4px; font-family:var(--font-mono); color:var(--gray-700);">
+            ${item.word_produced || '<span style="color:var(--gray-400);">—</span>'}
+          </td>
+          <td style="padding:5px 4px; text-align:center; font-size:0.75rem;
+              font-weight:600; color:${resultColor};">
+            ${resultStr}
+          </td>
+          <td style="padding:5px 4px; font-size:0.75rem; color:var(--gray-700);">
+            ${errorStr}
+          </td>
+          <td style="padding:5px 2px; text-align:center;">${audioBtn}</td>`;
+        tbody.appendChild(tr);
+      });
+    }
+
+    // Mostrar/ocultar botón de borrar audios según si hay audios disponibles
+    const btnDelAudio = document.getElementById("modal-btn-delete-audio");
+    if (data.session.has_audio) {
+      btnDelAudio.style.display = "block";
+    } else {
+      btnDelAudio.style.display = "none";
+    }
+
+    // Notas Gemma
+    if (data.report && (data.report.nota_clinica || data.report.nota_representantes)) {
+      document.getElementById("modal-report-block").style.display = "block";
+      document.getElementById("modal-nota-clinica").textContent =
+        data.report.nota_clinica || "—";
+      document.getElementById("modal-nota-rep").textContent =
+        data.report.nota_representantes || "—";
+    }
+  }
+
+  // ── Exportar PDF (abre el HTML del servidor y llama print) ──────────
+  window.printSession = async function () {
+    if (!currentSessionId) return;
+    const win = window.open(
+      `/api/historial/session/${currentSessionId}/report-html`,
+      "_blank"
+    );
+    if (!win) {
+      FS.showToast("El navegador bloqueó la ventana emergente.", "error");
+      return;
+    }
+    win.addEventListener("load", () => {
+      setTimeout(() => win.print(), 300);
+    });
+  };
+  // ── Reproducir audio de ítem ──────────────────────────────────────────
+  let currentAudio = null;
+  window.playAudio = function(sessionId, word) {
+    if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+    const url = `/api/historial/session/${sessionId}/audio/${encodeURIComponent(word)}`;
+    currentAudio = new Audio(url);
+    currentAudio.play().catch(() =>
+      FS.showToast("No se pudo reproducir el audio.", "error")
+    );
+  };
+
+  // ── Exportar ZIP ──────────────────────────────────────────────────────
+  window.exportZip = function() {
+    if (!currentSessionId) return;
+    window.location.href = `/api/historial/session/${currentSessionId}/export-zip`;
+  };
+
+  // ── Exportar JSON ─────────────────────────────────────────────────────
+  window.exportJson = async function() {
+    if (!currentSessionId) return;
+    const { ok, data } = await FS.api(`/api/historial/session/${currentSessionId}`);
+    if (!ok) { FS.showToast("Error al exportar.", "error"); return; }
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type:"application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `fonoscreen_${currentSessionId}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // ── Borrar audios (conservar resultado) ───────────────────────────────
+  window.deleteAudio = function() {
+    if (!currentSessionId) return;
+    FS.confirm({
+      title: "¿Borrar los audios de esta sesión?",
+      body: "Se eliminarán todos los archivos de grabación. El resultado y los datos del niño se conservan. Esta acción es irreversible y no se puede deshacer.",
+      confirmLabel: "Borrar audios",
+      confirmClass: "btn-amber",
+      onConfirm: async () => {
+        const { ok, data } = await FS.api(
+          `/api/historial/session/${currentSessionId}/delete-audio`, "POST"
+        );
+        if (ok && data.ok) {
+          FS.showToast("Audios eliminados.", "ok");
+          closeSessionModal();
+          setTimeout(() => location.reload(), 800);
+        } else {
+          FS.showToast(data.error || "Error al borrar audios.", "error");
+        }
+      },
+    });
+  };
+
+  // ── Borrar sesión completa ────────────────────────────────────────────
+  window.deleteSession = function() {
+    if (!currentSessionId) return;
+    FS.confirm({
+      title: "¿Borrar esta sesión completamente?",
+      body: "Se eliminarán los audios, el resultado y todos los registros de la base de datos. Esta acción es irreversible y no se puede deshacer.",
+      confirmLabel: "Borrar todo",
+      confirmClass: "btn-danger",
+      onConfirm: async () => {
+        const { ok, data } = await FS.api(
+          `/api/historial/session/${currentSessionId}`, "DELETE"
+        );
+        if (ok && data.ok) {
+          FS.showToast("Sesión eliminada.", "ok");
+          closeSessionModal();
+          setTimeout(() => location.reload(), 800);
+        } else {
+          FS.showToast(data.error || "Error al eliminar.", "error");
+        }
+      },
+    });
+  };
+
+})();
+</script>
+{% endblock %}

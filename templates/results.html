@@ -14,12 +14,12 @@
   <div class="card-header" style="justify-content:center; margin-bottom:20px;">
     <span class="card-icon teal">📊</span>
     <div>
-      <p class="card-title">Resultado de evaluación</p>
+      <p class="card-title" style="font-size:1.1rem;">
+        {{ state.child.name if state.child }}
+      </p>
       <p class="card-subtitle">
-        {{ state.child.name if state.child }} ·
-        {% if state.started_at %}
-          {{ state.started_at[:10] }}
-        {% endif %}
+        Evaluación fonológica ·
+        {% if state.started_at %}{{ state.started_at[:10] }}{% endif %}
       </p>
     </div>
   </div>

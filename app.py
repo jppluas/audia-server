@@ -18,16 +18,21 @@ from pathlib import Path
 
 from flask import (
     Flask, render_template, request, jsonify,
-    send_from_directory, redirect, url_for, abort
+    send_from_directory, send_file, redirect, url_for, abort
 )
+
+import db
+from report_html import generate_report_html
 
 # ─── Configuración ────────────────────────────────────────────────────────────
 
 BASE_DIR = Path(__file__).resolve().parent
 EXPORTS_DIR = BASE_DIR / "exports"
-LOGS_DIR = BASE_DIR / "logs"
+LOGS_DIR    = BASE_DIR / "logs"
+RECORDINGS_DIR = BASE_DIR / "recordings"
 EXPORTS_DIR.mkdir(exist_ok=True)
 LOGS_DIR.mkdir(exist_ok=True)
+RECORDINGS_DIR.mkdir(exist_ok=True)
 
 logging.basicConfig(
     filename=LOGS_DIR / "server.log",
@@ -42,6 +47,9 @@ SERVER_START_TIME = time.time()
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FONOSCREEN_SECRET", "dev-secret-fonoscreen")
+
+# Inicializar la base de datos (crea tablas si no existen)
+db.init()
 
 # ─── Estado global de sesión ──────────────────────────────────────────────────
 # En el Pi un solo evaluador opera el dispositivo; no se necesita BD.
@@ -94,6 +102,17 @@ def api_session_start():
     if _session_state["active"]:
         return jsonify({"ok": False, "error": "Ya hay una sesión activa."}), 409
 
+    # Verificar espacio en disco antes de iniciar
+    if not db.has_enough_space():
+        remaining = db.get_sessions_remaining()
+        return jsonify({
+            "ok": False,
+            "error": f"Espacio insuficiente. Solo quedan {remaining} sesión(es) disponibles en disco. "
+                     f"Libere espacio borrando audios desde el historial antes de continuar.",
+            "low_space": True,
+            "sessions_remaining": remaining,
+        }), 507
+
     data = request.get_json(silent=True) or {}
     required = ["name", "dob", "gender"]
     for field in required:
@@ -105,22 +124,32 @@ def api_session_start():
         "active": True,
         "session_id": session_id,
         "child": {
-            "name": data["name"].strip(),
-            "dob": data["dob"],
+            "name":   data["name"].strip(),
+            "dob":    data["dob"],
             "gender": data["gender"],
-            "notes": data.get("notes", "").strip(),
+            "notes":  data.get("notes", "").strip(),
+            # anamnesis estructurada
+            "anamnesis_otitis":         data.get("anamnesis_otitis", 0),
+            "anamnesis_hearing_dx":     data.get("anamnesis_hearing_dx"),
+            "anamnesis_home_language":  data.get("anamnesis_home_language", "español"),
+            "anamnesis_family_history": data.get("anamnesis_family_history", 0),
+            "anamnesis_family_who":     data.get("anamnesis_family_who"),
+            "anamnesis_prior_therapy":  data.get("anamnesis_prior_therapy", 0),
         },
         "current_item": 0,
         "total_items": 20,
         "status": "idle",
-        "current_word": None,       # Daniel: palabra objetivo actual
-        "analysis_progress": 0,     # Daniel: ítems analizados post-grabación
-        "no_voice_detected": False, # Daniel: Silero VAD no detectó voz
+        "current_word": None,
+        "analysis_progress": 0,
+        "no_voice_detected": False,
         "results": None,
         "started_at": datetime.now().isoformat(),
     }
 
     log.info("Sesión iniciada: %s — %s", session_id, data["name"])
+
+    # Persistir en la base de datos
+    db.create_session(session_id, _session_state["child"], _session_state["started_at"])
 
     # TODO: aquí se lanza el pipeline en un hilo separado
     # from pipeline import run_pipeline
@@ -173,6 +202,12 @@ def api_session_reset():
     """Cancela la sesión actual y vuelve a registro."""
     global _session_state
     old_id = _session_state.get("session_id")
+    # Marcar como cancelada en la BD si había sesión activa
+    if old_id and _session_state.get("active"):
+        try:
+            db.cancel_session(old_id)
+        except Exception as e:
+            log.warning("No se pudo cancelar sesión en BD: %s", e)
     _session_state = {
         "active": False, "session_id": None, "child": {},
         "current_item": 0, "total_items": 20, "status": "idle",
@@ -221,10 +256,15 @@ def device_panel():
     uptime_str = f"{hours}h {mins}m {secs}s"
 
     disk_info = _get_disk_info()
+    sessions_remaining = db.get_sessions_remaining()
+    low_space = sessions_remaining >= 0 and sessions_remaining < db.MIN_FREE_SESSIONS
     return render_template("device.html",
                            uptime=uptime_str,
                            disk=disk_info,
-                           is_pi=IS_PI)
+                           is_pi=IS_PI,
+                           sessions_remaining=sessions_remaining,
+                           low_space=low_space,
+                           min_free_sessions=db.MIN_FREE_SESSIONS)
 
 
 @app.route("/api/device/volume", methods=["POST"])
@@ -420,6 +460,169 @@ def api_device_status():
         "disk": _get_disk_info(),
         "is_pi": IS_PI,
         "server_time": datetime.now().strftime("%H:%M:%S"),
+    })
+
+
+# ── Historial y pruebas de BD ─────────────────────────────────────────────────
+
+@app.route("/historial")
+def historial():
+    """Pantalla de historial de sesiones — lectura y pruebas de la BD."""
+    sessions = db.list_sessions(limit=50)
+    return render_template("historial.html", sessions=sessions)
+
+
+@app.route("/api/historial/sessions")
+def api_historial_sessions():
+    """Lista las últimas 50 sesiones."""
+    return jsonify({"ok": True, "sessions": db.list_sessions(50)})
+
+
+@app.route("/api/historial/session/<session_id>")
+def api_historial_session(session_id):
+    """Devuelve la exportación completa de una sesión (todas las tablas)."""
+    data = db.export_session(session_id)
+    if not data:
+        return jsonify({"ok": False, "error": "Sesión no encontrada."}), 404
+    return jsonify({"ok": True, **data})
+
+
+@app.route("/api/historial/seed", methods=["POST"])
+def api_historial_seed():
+    """Inserta una sesión de prueba completa. Solo disponible en desarrollo."""
+    if not app.debug:
+        abort(403)
+    try:
+        sid = db.seed_test_session()
+        return jsonify({"ok": True, "session_id": sid})
+    except Exception as e:
+        log.warning("seed_test_session falló: %s", e)
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/historial/session/<session_id>", methods=["DELETE"])
+def api_historial_delete(session_id):
+    """Elimina completamente una sesión: BD + audios."""
+    try:
+        import shutil
+        # Borrar audios
+        audio_folder = RECORDINGS_DIR / session_id
+        if audio_folder.exists():
+            shutil.rmtree(audio_folder, ignore_errors=True)
+        # Borrar de la BD
+        with db._connect() as conn:
+            conn.execute("DELETE FROM reports WHERE session_id = ?", (session_id,))
+            conn.execute("DELETE FROM phoneme_summary WHERE session_id = ?", (session_id,))
+            conn.execute("DELETE FROM items WHERE session_id = ?", (session_id,))
+            conn.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
+        log.info("Sesión %s eliminada completamente.", session_id)
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/historial/session/<session_id>/delete-audio", methods=["POST"])
+def api_historial_delete_audio(session_id):
+    """Elimina solo los audios de una sesión, conserva el resultado en BD."""
+    try:
+        existed = db.delete_audio_files(session_id)
+        log.info("Audios de sesión %s eliminados (existían: %s).", session_id, existed)
+        return jsonify({"ok": True, "had_audio": existed})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/historial/session/<session_id>/audio/<word>")
+def api_historial_audio(session_id, word):
+    """Sirve el WAV de una palabra para reproducción inline en el historial."""
+    # Normalizar por si la URL llega con o sin tilde
+    audio_path = db.get_audio_path(session_id, word)
+    if not audio_path:
+        # Intentar también con la palabra ya normalizada (por si el cliente envió con tilde)
+        audio_path = db.get_audio_path(session_id, db._normalize_word(word))
+    if not audio_path:
+        abort(404)
+    return send_file(audio_path, mimetype="audio/wav")
+
+
+@app.route("/api/historial/session/<session_id>/export-zip")
+def api_historial_export_zip(session_id):
+    """
+    Exporta la sesión completa como ZIP:
+      - fonoscreen_<id>.json        — datos completos
+      - informe_<nombre>_<id>.pdf   — generado en memoria con weasyprint
+      - audios/<id>_<palabra>.wav   — si existen en disco
+    Nada se escribe en disco en el servidor.
+    """
+    import zipfile
+    import io
+
+    data = db.export_session(session_id)
+    if not data:
+        return jsonify({"ok": False, "error": "Sesión no encontrada."}), 404
+
+    child_name = data["session"]["child_name"].replace(" ", "_")
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+
+        # 1. JSON
+        zf.writestr(
+            f"fonoscreen_{session_id}.json",
+            json.dumps(data, indent=2, ensure_ascii=False)
+        )
+
+        # 2. PDF generado en memoria con weasyprint
+        try:
+            from weasyprint import HTML as WP_HTML
+            html_str = generate_report_html(data)
+            pdf_bytes = WP_HTML(string=html_str).write_pdf()
+            zf.writestr(f"informe_{child_name}_{session_id}.pdf", pdf_bytes)
+        except Exception as e:
+            log.warning("weasyprint falló al generar PDF para ZIP: %s", e)
+            # Incluir nota de error en vez de fallar todo el ZIP
+            zf.writestr(
+                "informe_ERROR.txt",
+                f"No se pudo generar el PDF: {e}\n"
+                f"Instalar dependencias: sudo apt install -y "
+                f"libpango-1.0-0 libharfbuzz0b libpangoft2-1.0-0 "
+                f"libharfbuzz-subset0 libffi-dev libjpeg-dev libopenjp2-7-dev"
+            )
+
+        # 3. Audios si existen
+        audio_folder = RECORDINGS_DIR / session_id
+        if audio_folder.exists():
+            for wav in sorted(audio_folder.glob("*.wav")):
+                zf.write(wav, f"audios/{wav.name}")
+
+    buf.seek(0)
+    filename = f"fonoscreen_{child_name}_{session_id}.zip"
+    return send_file(
+        buf,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=filename
+    )
+
+
+@app.route("/api/historial/session/<session_id>/report-html")
+def api_historial_report_html(session_id):
+    """Devuelve el HTML del informe — mismo que usa weasyprint para el PDF."""
+    data = db.export_session(session_id)
+    if not data:
+        return jsonify({"ok": False, "error": "Sesión no encontrada."}), 404
+    html = generate_report_html(data)
+    return html, 200, {"Content-Type": "text/html; charset=utf-8"}
+def api_device_space():
+    """Devuelve espacio libre y sesiones restantes estimadas."""
+    remaining = db.get_sessions_remaining()
+    return jsonify({
+        "ok": True,
+        "free_mb": db.get_disk_free_mb(),
+        "sessions_remaining": remaining,
+        "low_space": remaining >= 0 and remaining < db.MIN_FREE_SESSIONS,
+        "min_free_sessions": db.MIN_FREE_SESSIONS,
+        "session_size_mb": db.SESSION_AUDIO_MB,
     })
 
 
