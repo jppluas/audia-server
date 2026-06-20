@@ -151,9 +151,9 @@ def api_session_start():
     # Persistir en la base de datos
     db.create_session(session_id, _session_state["child"], _session_state["started_at"])
 
-    # TODO: aquí se lanza el pipeline en un hilo separado
-    # from pipeline import run_pipeline
-    # threading.Thread(target=run_pipeline, args=(session_id,), daemon=True).start()
+    from pipeline import run_pipeline
+    import threading
+    threading.Thread(target=run_pipeline, args=(session_id, _session_state), daemon=True).start()
 
     return jsonify({"ok": True, "session_id": session_id})
 
@@ -202,12 +202,13 @@ def api_session_reset():
     """Cancela la sesión actual y vuelve a registro."""
     global _session_state
     old_id = _session_state.get("session_id")
-    # Marcar como cancelada en la BD si había sesión activa
-    if old_id and _session_state.get("active"):
+    
+    if old_id and _session_state.get("active") and _session_state.get("status") != "done":
         try:
             db.cancel_session(old_id)
         except Exception as e:
             log.warning("No se pudo cancelar sesión en BD: %s", e)
+            
     _session_state = {
         "active": False, "session_id": None, "child": {},
         "current_item": 0, "total_items": 20, "status": "idle",
@@ -215,7 +216,6 @@ def api_session_reset():
     }
     log.info("Sesión %s reiniciada/cancelada.", old_id)
     return jsonify({"ok": True})
-
 
 # ── Resultados ────────────────────────────────────────────────────────────────
 
