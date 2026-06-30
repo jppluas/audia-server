@@ -2,7 +2,6 @@
 # FonoScreen — first_boot.sh
 # Se ejecuta UNA SOLA VEZ en el primer arranque del Pi.
 # Lee los archivos de configuración desde /home/pi/fonoscreen-server/config/
-# NO sobreescribe archivos que ya existen en el proyecto.
 # Compatible con Pi 3 B+, Pi 4 y Pi 5.
 
 set -e
@@ -26,29 +25,78 @@ NETWORK_CONFIG="/boot/firmware/network-config"
 [ -f "/boot/network-config" ] && NETWORK_CONFIG="/boot/network-config"
 
 if [ -f "$NETWORK_CONFIG" ]; then
-    # Extrae el SSID (la línea con comillas después de "access-points:")
     WIFI_SSID=$(grep -A1 "access-points:" "$NETWORK_CONFIG" | tail -1 | tr -d ' "' | tr -d ':')
     echo "==> Red WiFi detectada del Imager: $WIFI_SSID"
 else
     echo "==> No se encontró network-config, SSID quedará como placeholder"
 fi
 
-# ── 1. Instalar dependencias ──────────────────────────────────────────────────
-echo "==> Instalando dependencias..."
+# ── 1. Instalar dependencias del sistema ──────────────────────────────────────
+echo "==> Instalando dependencias del sistema..."
 apt-get update -qq
-apt-get install -y python3-venv python3-pip sox alsa-utils hostapd dnsmasq \
+apt-get install -y \
+    python3-venv python3-pip \
+    sox alsa-utils \
+    hostapd dnsmasq \
+    espeak-ng \
     libpango-1.0-0 libharfbuzz0b libpangoft2-1.0-0 \
     libharfbuzz-subset0 libffi-dev libjpeg-dev libopenjp2-7-dev
 
-# ── 2. Crear venv ─────────────────────────────────────────────────────────────
+# ── 2. Instalar PipeWire para audio Bluetooth ─────────────────────────────────
+echo "==> Instalando PipeWire..."
+apt-get install -y pipewire pipewire-pulse wireplumber libspa-0.2-bluetooth
+
+# Habilitar PipeWire como servicio de usuario del usuario pi
+sudo -u pi systemctl --user enable pipewire pipewire-pulse wireplumber 2>/dev/null || true
+echo "OK: PipeWire instalado y habilitado"
+
+# ── 3. Fix Bluetooth — evitar soft block en cada arranque ────────────────────
+echo "==> Configurando Bluetooth..."
+echo 'SUBSYSTEM=="rfkill", ATTR{type}=="bluetooth", ATTR{state}="1"' \
+    > /etc/udev/rules.d/50-bluetooth.rules
+echo "OK: regla udev Bluetooth"
+
+# Asegurar que bluetooth arranque después de PipeWire
+# (PipeWire debe registrar los perfiles antes de que BlueZ intente conectar)
+mkdir -p /etc/systemd/system/bluetooth.service.d
+cat > /etc/systemd/system/bluetooth.service.d/pipewire-wait.conf << 'EOF'
+[Unit]
+After=pipewire.service wireplumber.service
+EOF
+echo "OK: bluetooth esperará a PipeWire"
+
+# ── 4. Variables de entorno para fonoscreen.service ──────────────────────────
+# PipeWire es servicio de usuario; Flask necesita saber dónde está el socket
+mkdir -p /etc/systemd/system/fonoscreen.service.d
+cat > /etc/systemd/system/fonoscreen.service.d/pipewire.conf << 'EOF'
+[Service]
+Environment="PIPEWIRE_RUNTIME_DIR=/run/user/1000"
+Environment="XDG_RUNTIME_DIR=/run/user/1000"
+EOF
+echo "OK: variables PipeWire en fonoscreen.service"
+
+# ── 5. Crear venv e instalar dependencias Python ──────────────────────────────
 echo "==> Creando venv..."
 cd "$PROJECT"
 rm -rf venv
 python3 -m venv venv
-venv/bin/pip install --quiet -r requirements.txt
+
+# pip install normal para paquetes pequeños
+venv/bin/pip install --quiet Flask weasyprint sounddevice soundfile requests phonemizer
+
+# torch/torchaudio/transformers son muy grandes (~500MB+)
+# Usar directorio temporal en disco para evitar llenar /tmp (RAM)
+echo "==> Instalando torch (puede tardar 10-20 minutos)..."
+mkdir -p /home/pi/.pip-tmp
+TMPDIR=/home/pi/.pip-tmp venv/bin/pip install \
+    --cache-dir /home/pi/.pip-cache \
+    torch torchaudio transformers 2>&1 | tail -5
+rm -rf /home/pi/.pip-tmp /home/pi/.pip-cache
+
 mkdir -p logs exports recordings
 touch logs/server.log
 chown -R pi:pi "$PROJECT"
+echo "OK: venv y dependencias"
 
 # ── 3. Instalar archivos de configuración desde config/ ───────────────────────
 echo "==> Instalando archivos de configuración..."

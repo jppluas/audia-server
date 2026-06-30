@@ -9,10 +9,12 @@ ESPOL · Ingeniería en Ciencias de la Computación · Materia Integradora
 
 ```
 fonoscreen-server/
-├── app.py                  # Servidor Flask — toda la infraestructura
+├── app.py                  # Servidor Flask — infraestructura completa
 ├── db.py                   # Capa de persistencia SQLite
+├── pipeline.py             # Flujo de evaluación: grabación, IA, guardado
+├── motor_ia.py             # Silero VAD + wav2vec2 XLS-R + Phonemizer + NW
 ├── report_html.py          # Fuente única del HTML del informe (PDF y pantalla)
-├── requirements.txt        # Flask==3.1.3, weasyprint
+├── requirements.txt        # Dependencias Python
 ├── first_boot.sh           # Script de primer arranque del Pi
 ├── first-boot.service      # Servicio systemd que lanza first_boot.sh
 ├── backup_config.sh        # Script para hacer backup de la configuración
@@ -25,19 +27,21 @@ fonoscreen-server/
 │   └── fonoscreen-hotspot.service
 ├── templates/
 │   ├── base.html           # Layout compartido (header, footer)
-│   ├── register.html       # Registro del niño + anamnesis
+│   ├── register.html       # Registro del niño + anamnesis (sin nombre)
 │   ├── session.html        # Pantalla en curso — polling al estado global
-│   ├── results.html        # Resultados y descarga de informes
+│   ├── results.html        # Resultado global + fonemas + ir al historial
 │   ├── device.html         # Panel de dispositivo (volumen, mic, apagado)
 │   └── historial.html      # Historial de sesiones + gestión de audios
 ├── static/
 │   ├── css/base.css        # Estilos mobile-first
 │   └── js/utils.js         # Utilidades JS: toast, confirm, api()
-├── recordings/             # Audios grabados por sesión (git-ignored)
+├── audios/                 # Estímulos WAV de la batería (git-ignored)
+│   └── mama.wav, taza.wav, gato.wav ... (20 archivos, nombre sin tildes)
+├── recordings/             # Respuestas grabadas por sesión (git-ignored)
 │   └── <session_id>/
 │       └── <session_id>_<palabra>.wav
 ├── backups/                # Backups del sistema (git-ignored)
-├── exports/                # Reservado para exportaciones futuras (git-ignored)
+├── exports/                # Reservado (git-ignored)
 ├── fonoscreen.db           # Base de datos SQLite (git-ignored)
 └── logs/
     └── server.log
@@ -49,11 +53,18 @@ fonoscreen-server/
 
 ### Dependencias de sistema (solo una vez)
 
-weasyprint requiere librerías del sistema además del paquete Python:
-
 ```bash
+# weasyprint
 sudo apt install -y libpango-1.0-0 libharfbuzz0b libpangoft2-1.0-0 \
     libharfbuzz-subset0 libffi-dev libjpeg-dev libopenjp2-7-dev
+
+# pipeline de IA
+sudo apt install -y espeak-ng sox
+
+# audio real en laptop (para prueba de micrófono y pipeline)
+sudo apt install -y pulseaudio alsa-utils
+sudo usermod -aG audio $USER
+pulseaudio --start
 ```
 
 ### Arrancar el servidor
@@ -69,35 +80,27 @@ python app.py
 
 Desde el celular (misma red): `http://<IP-de-la-laptop>:5000`
 
-En laptop, `IS_PI = False`. Esto significa:
-- El volumen, tono, grabación de micrófono y apagado se **simulan** (responden ok sin ejecutar nada real).
-- El endpoint `/dev/simulate` está activo para simular el pipeline manualmente.
-- El servidor corre en modo debug con recarga automática.
-- El botón "🧪 Llenar con datos de prueba" en el registro es visible.
-- El botón "➕ Insertar sesión de prueba" en el historial es visible.
+En laptop, `IS_PI = False`. El servidor usa `wpctl`/`pw-play`/`pw-record` para
+audio igual que en el Pi (vía PipeWire/PulseAudio). El micrófono y el tono
+funcionan realmente — no se simulan.
+
+El endpoint `/dev/simulate` está activo para simular el pipeline manualmente
+sin necesidad de que el pipeline de IA esté corriendo.
 
 > **Importante:** el venv tiene rutas absolutas. Si mueves o renombras la
 > carpeta, bórralo y créalo de nuevo:
 > ```bash
-> rm -rf venv
-> python3 -m venv venv
-> source venv/bin/activate
-> pip install -r requirements.txt
+> rm -rf venv && python3 -m venv venv
+> source venv/bin/activate && pip install -r requirements.txt
 > ```
 
-> **Importante:** verificar siempre que solo hay un proceso corriendo antes de
-> probar. Dos servidores activos al mismo tiempo causan comportamiento
-> impredecible porque el navegador puede estar hablando con el proceso viejo.
+> **Importante:** verificar que solo hay un proceso corriendo:
 > ```bash
-> pkill -f "python app.py"
-> sleep 1
-> ps aux | grep "python app.py"  # verificar que no queda ninguno
-> python app.py
+> pkill -f "python app.py" && sleep 1 && python app.py
 > ```
 
-> **Importante:** probar en ventana incógnito (`Ctrl+Shift+N`). Las extensiones
-> de Chrome pueden interceptar eventos de click y hacer que los botones no
-> respondan aunque el código esté correcto.
+> **Importante:** probar en ventana incógnito (`Ctrl+Shift+N`) para evitar
+> interferencia de extensiones del navegador.
 
 ---
 
@@ -185,23 +188,45 @@ cat ~/first_boot.log
 
 ## Setup manual del Pi (alternativa si first_boot.sh falla)
 
-Si el arranque automático no funciona, este es el proceso paso a paso:
-
 ```bash
-# 1. Instalar dependencias de audio, red y weasyprint
-sudo apt install -y sox alsa-utils hostapd dnsmasq \
+# 1. Dependencias del sistema
+sudo apt install -y sox alsa-utils hostapd dnsmasq espeak-ng \
     libpango-1.0-0 libharfbuzz0b libpangoft2-1.0-0 \
     libharfbuzz-subset0 libffi-dev libjpeg-dev libopenjp2-7-dev
 
-# 2. Clonar el proyecto
+# 2. PipeWire para audio Bluetooth
+sudo apt install -y pipewire pipewire-pulse wireplumber libspa-0.2-bluetooth
+systemctl --user enable pipewire pipewire-pulse wireplumber
+systemctl --user start pipewire pipewire-pulse wireplumber
+
+# 3. Fix Bluetooth soft block
+sudo rfkill unblock bluetooth
+echo 'SUBSYSTEM=="rfkill", ATTR{type}=="bluetooth", ATTR{state}="1"' \
+    | sudo tee /etc/udev/rules.d/50-bluetooth.rules
+
+# 4. Variables de entorno PipeWire para el servicio Flask
+sudo mkdir -p /etc/systemd/system/fonoscreen.service.d
+sudo tee /etc/systemd/system/fonoscreen.service.d/pipewire.conf << 'EOF'
+[Service]
+Environment="PIPEWIRE_RUNTIME_DIR=/run/user/1000"
+Environment="XDG_RUNTIME_DIR=/run/user/1000"
+EOF
+
+# 5. Clonar el proyecto y crear venv
 git clone <repo> ~/fonoscreen-server
 cd ~/fonoscreen-server
-
-# 3. Crear el venv ARM
 python3 -m venv venv
-venv/bin/pip install -r requirements.txt
 
-# 4. Copiar archivos de configuración
+# Paquetes pequeños primero
+venv/bin/pip install Flask weasyprint sounddevice soundfile requests phonemizer
+
+# torch separado con directorio temporal en disco (evita llenar /tmp en RAM)
+mkdir -p ~/.pip-tmp
+TMPDIR=~/.pip-tmp venv/bin/pip install --cache-dir ~/.pip-cache \
+    torch torchaudio transformers
+rm -rf ~/.pip-tmp ~/.pip-cache
+
+# 6. Copiar archivos de configuración
 sudo cp config/hostapd.conf /etc/hostapd/hostapd.conf
 sudo cp config/dnsmasq.conf /etc/dnsmasq.conf
 sudo cp config/modo-hotspot /usr/local/bin/modo-hotspot
@@ -210,11 +235,9 @@ sudo chmod +x /usr/local/bin/modo-hotspot /usr/local/bin/modo-dev
 sudo cp config/fonoscreen.service /etc/systemd/system/
 sudo cp config/fonoscreen-hotspot.service /etc/systemd/system/
 
-# 5. Habilitar servicios
+# 7. Habilitar servicios y activar hotspot
 sudo systemctl daemon-reload
 sudo systemctl enable fonoscreen fonoscreen-hotspot
-
-# 6. Activar hotspot
 sudo /usr/local/bin/modo-hotspot
 ```
 
@@ -226,6 +249,72 @@ tail -f ~/fonoscreen-server/logs/server.log
 ```
 
 ---
+
+## Audio Bluetooth en el Pi
+
+FonoScreen usa PipeWire para gestionar el audio. Los controles usan `wpctl` y
+`pw-play`/`pw-record`, que funcionan tanto en el Pi como en laptop con
+PipeWire/PulseAudio.
+
+### Conectar auriculares Bluetooth
+
+```bash
+# PipeWire debe estar corriendo antes de conectar
+systemctl --user start pipewire pipewire-pulse wireplumber
+sleep 5
+
+# Emparejar (solo la primera vez)
+bluetoothctl
+  power on
+  agent on
+  default-agent
+  scan on
+  # Esperar que aparezca el MAC del dispositivo
+  pair XX:XX:XX:XX:XX:XX
+  trust XX:XX:XX:XX:XX:XX
+  connect XX:XX:XX:XX:XX:XX
+  exit
+
+# Verificar que PipeWire los detectó
+wpctl status
+```
+
+### Comportamiento de audio con Bluetooth
+
+Los auriculares operan en dos perfiles:
+- **A2DP** — alta calidad, solo reproducción. Activo cuando se reproducen estímulos.
+- **HFP** — baja calidad, entrada + salida. Se activa automáticamente al grabar.
+
+El switch entre perfiles toma 2-3 segundos. El evaluador debe esperar ese tiempo
+después de que aparezca "Ahora repite la palabra" antes de pedirle al niño que hable.
+
+### Si los auriculares no conectan después de reiniciar
+
+```bash
+sudo rfkill unblock bluetooth
+systemctl --user start pipewire.socket pipewire-pulse.socket wireplumber
+sleep 5
+bluetoothctl connect XX:XX:XX:XX:XX:XX
+```
+
+Si falla con `br-connection-profile-unavailable`, reiniciar bluetooth después
+de que PipeWire esté corriendo:
+
+```bash
+sudo systemctl restart bluetooth
+sleep 3
+bluetoothctl connect XX:XX:XX:XX:XX:XX
+```
+
+### Verificar volumen y dispositivo por defecto
+
+```bash
+wpctl status              # ver sinks y sources activos
+wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.8
+wpctl set-volume @DEFAULT_AUDIO_SOURCE@ 0.8
+```
+
+
 
 ## Uso diario
 
@@ -339,10 +428,10 @@ arrancar Flask por primera vez. No hay que crearla manualmente.
 
 | tabla | descripción |
 |---|---|
-| `sessions` | Una fila por sesión: datos del niño, anamnesis, PFFB, nivel, estado |
+| `sessions` | Una fila por sesión: fecha de nacimiento, género, anamnesis, PFFB, nivel, estado. Sin nombre del niño (anonimizado). Solo sesiones con `status='done'` aparecen en el historial. |
 | `items` | Una fila por palabra evaluada (20 por sesión): transcripción, resultado, tipo de error, alineación NW |
 | `phoneme_summary` | Una fila por fonema por sesión: PFF%, nivel, error predominante |
-| `reports` | Una fila por sesión: nota clínica y nota para representantes generadas por Gemma |
+| `reports` | Una fila por sesión: nota clínica y nota para representantes generadas automáticamente por el pipeline |
 
 ### Funciones principales (para el pipeline de Daniel)
 
@@ -455,22 +544,39 @@ cambia en ambos lados automáticamente.
 ```python
 from report_html import generate_report_html
 data = db.export_session(session_id)
-html = generate_report_html(data)
+
+# Informe clínico (completo, para el especialista)
+html = generate_report_html(data, tipo="clinico")
+
+# Informe para representantes (simplificado, para padres)
+html = generate_report_html(data, tipo="representantes")
+
 # Para PDF:
 from weasyprint import HTML
 pdf_bytes = HTML(string=html).write_pdf()
 ```
 
-El informe contiene:
-1. Identificación del niño (nombre, fecha de nacimiento, edad, género, fecha de evaluación)
-2. Anamnesis (historial de otitis, diagnóstico auditivo, idioma en el hogar, antecedentes familiares, terapia previa)
-3. Resultado global (PFFB%, nivel, interpretación)
+**Informe clínico** contiene:
+1. Identificación (fecha de nacimiento, edad, género, fecha de evaluación)
+2. Anamnesis
+3. Resultado global (PFFB redondeado a 2 decimales, nivel, interpretación)
 4. Desempeño por fonema (PFF%, nivel, error predominante)
-5. Detalle por palabra (palabra esperada, producción del niño, resultado, tipo de error)
-6. Nota clínica (generada por Gemma 2B)
-7. Nota para representantes (generada por Gemma 2B)
+5. Detalle por palabra (palabra esperada, producción, resultado, tipo de error)
+6. Nota clínica (generada automáticamente por el pipeline según los errores detectados)
 
-Tiempo de generación del PDF estimado por hardware:
+**Informe para representantes** contiene:
+1. Identificación
+2. Anamnesis
+3. Resultado global
+4. Desempeño por fonema (solo nivel, sin PFF% ni error predominante)
+5. Detalle por palabra (sin tipo de error)
+6. Nota para representantes (consejos prácticos por fonema en lenguaje simple)
+
+Las notas se generan en `pipeline.py` mediante `_generar_nota_clinica()` y
+`_generar_nota_representantes()`, usando una base de conocimiento por fonema
+con observaciones clínicas específicas para cada tipo de error (omisión/sustitución).
+
+Tiempo de generación del PDF estimado:
 - Pi 3 B+: 3-8 segundos
 - Pi 4: 1-3 segundos
 - Pi 5: menos de 1 segundo
@@ -492,7 +598,6 @@ _session_state = {
     "active":       bool,   # True cuando hay sesión en curso
     "session_id":   str,    # ID de 8 caracteres, ej. "A1B2C3D4"
     "child": {
-        "name":   str,
         "dob":    str,      # "YYYY-MM-DD"
         "gender": str,      # "F" | "M" | "O"
         "notes":  str,
@@ -1005,6 +1110,8 @@ done
 
 ## TODOs pendientes
 
-- `app.py` ~línea 154: descomentar lanzamiento del pipeline en hilo
-- `api_report()`: reemplazar placeholder por PDF real usando `report_html.py` + weasyprint
+- `pipeline.py`: completar `BATERIA` con las 20 palabras reales (actualmente 3 para pruebas)
+- `motor_ia.py`: agregar umbral de similitud mínima para marcar `not_evaluable` cuando el niño dice algo completamente diferente a la palabra esperada
+- Bluetooth: conexión automática confiable de auriculares en cada arranque del Pi sin intervención manual
 - Panel de dispositivo: campo para cambiar SSID/contraseña del modo dev sin editar archivos
+- `pipeline.py`: actualizar `analysis_progress` durante la fase de análisis para que la barra de progreso se mueva
