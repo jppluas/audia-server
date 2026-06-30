@@ -148,14 +148,14 @@ def run_pipeline(session_id, state_fantasma):
         db.close_session(session_id, pffb_global, nivel_global)
 
         actualizar_ui(session_id, "status", "generating_report")
-        
-        nota_c = f"NOTA CLÍNICA AUTOMÁTICA: El paciente finalizó la evaluación con un PFFB global de {pffb_global:.1f}% ({nivel_global}). Se registraron los siguientes desempeños por fonema: {pff_por_fonema}."
-        nota_r = f"INFORME PARA PADRES: Su niño(a) completó la prueba interactiva de pronunciación obteniendo un puntaje general de {pffb_global:.1f}%."
+
+        nota_c = _generar_nota_clinica(pffb_global, nivel_global, pff_por_fonema)
+        nota_r = _generar_nota_representantes(pffb_global, nivel_global, pff_por_fonema)
 
         db.save_report(session_id, {"nota_clinica": nota_c, "nota_representantes": nota_r})
         
         actualizar_ui(session_id, "results", {
-            "score": round(pffb_global, 1),
+            "score": round(pffb_global, 2),
             "level": nivel_global
         })
         actualizar_ui(session_id, "status", "done")
@@ -165,3 +165,242 @@ def run_pipeline(session_id, state_fantasma):
         traceback.print_exc()
         actualizar_ui(session_id, "status", "error")
         db.close_session(session_id, 0.0, "Error del Sistema")
+
+
+# ── Base de conocimiento clínico por fonema ───────────────────────────────────
+_CONOCIMIENTO_FONEMA = {
+    "/m/": {
+        "tipo": "nasal bilabial",
+        "omision": (
+            "La omisión de /m/ puede indicar dificultad para sostener el cierre labial. "
+            "Se recomienda estimular con bombardeo auditivo de palabras con /m/ inicial "
+            "y ejercicios de cierre labial (soplar, besar objetos). Priorizar posición inicial."
+        ),
+        "sustitucion": (
+            "La sustitución de /m/ suele reflejar confusión entre nasales. "
+            "Trabajar discriminación auditiva /m/-/n/ y resonancia nasal frente a espejo. "
+            "Contrastar pares mínimos: 'mamá/nana', 'mano/nano'."
+        ),
+        "padres_omision": "Pida a su niño que cierre los labios al decir 'mmm' como si oliera algo rico. Practiquen juntos palabras como mamá, mano, mesa.",
+        "padres_sustitucion": "Digan juntos 'mamá' y 'nana' alternando, notando que para la 'M' los labios se juntan y para la 'N' la lengua sube.",
+    },
+    "/p/": {
+        "tipo": "oclusiva bilabial sorda",
+        "omision": (
+            "La omisión de /p/ es frecuente en posición final. Reforzar conciencia del "
+            "cierre labial y el golpe de aire con velas o papel tissue. Trabajar primero "
+            "en posición inicial (papá, pato) y luego en posición final (top, cap)."
+        ),
+        "sustitucion": (
+            "La sustitución /p/→/b/ indica dificultad para diferenciar sordas y sonoras. "
+            "Usar pares mínimos poca/boca, pala/bala. Verificar vibración laríngea "
+            "con la mano en la garganta para distinguir /p/ (sin vibración) de /b/."
+        ),
+        "padres_omision": "Soplen juntos una vela sin apagarla diciendo 'p-p-p'. Luego digan 'papá', 'pato', 'piso' exagerando el golpe de aire al inicio.",
+        "padres_sustitucion": "Pongan la mano en la garganta: con 'b' vibra, con 'p' no. Jueguen alternando 'poca/boca', 'pala/bala' sintiendo la diferencia.",
+    },
+    "/b/": {
+        "tipo": "oclusiva bilabial sonora",
+        "omision": (
+            "La omisión de /b/ requiere atención en posición inicial. Trabajar con "
+            "palabras de alta frecuencia: boca, bota, bebé. Verificar si la omisión "
+            "ocurre también en posición intervocálica (proceso normal en español)."
+        ),
+        "sustitucion": (
+            "La sustitución /b/→/p/ (desonorización) es frecuente hasta los 4 años. "
+            "Trabajar consciencia de vibración laríngea y pares mínimos boca/poca. "
+            "Suele resolverse espontáneamente; derivar si persiste después de los 4 años."
+        ),
+        "padres_omision": "Practiquen 'boca', 'bota', 'bebé' con énfasis en el sonido inicial. Jueguen a encontrar objetos que empiecen con 'b' en casa.",
+        "padres_sustitucion": "La 'b' vibra en la garganta, la 'p' no. Toque su garganta al decir 'boca' y luego 'poca'. Pida a su niño que imite sintiendo esa vibración.",
+    },
+    "/t/": {
+        "tipo": "oclusiva dental sorda",
+        "omision": (
+            "La omisión de /t/ en posición inicial es inusual y requiere atención. "
+            "Trabajar posición de lengua detrás de incisivos superiores con espejo. "
+            "Usar palabras: taza, tela, topo."
+        ),
+        "sustitucion": (
+            "La sustitución /t/→/d/ indica dificultad sorda/sonora. "
+            "La sustitución /t/→/k/ (posteriorización) es infrecuente y requiere "
+            "trabajo de fronting con pares mínimos taza/casa. Verificar cuál de "
+            "los dos patrones predomina para orientar la intervención."
+        ),
+        "padres_omision": "Frente a un espejo, muéstrele que la lengua toca detrás de los dientes al decir 'ta'. Practiquen 'taza', 'tela', 'topo'.",
+        "padres_sustitucion": "Si dice 'daza' por 'taza': ponga su mano en la garganta, la 't' no vibra. Si dice 'kaza': la 't' se hace adelante con la lengua, no atrás.",
+    },
+    "/d/": {
+        "tipo": "oclusiva dental sonora",
+        "omision": (
+            "La omisión de /d/ intervocálica es un proceso normal en español hasta los 4 años. "
+            "En posición inicial requiere atención antes. Trabajar con dado, dedo, diente."
+        ),
+        "sustitucion": (
+            "La sustitución /d/→/t/ (desonorización) es el error más frecuente. "
+            "Trabajar percepción de vibración laríngea y pares mínimos dedo/teto, dado/tato. "
+            "Evaluar si ocurre solo intervocálicamente (proceso normal) o en todos los contextos."
+        ),
+        "padres_omision": "Practiquen 'dado', 'dedo', 'diente' marcando bien el sonido inicial. Si omite la 'd' en medio de palabra (como 'naa' por 'nada'), es frecuente a esta edad.",
+        "padres_sustitucion": "Si dice 'tedo' por 'dedo', la diferencia es la vibración. Digan juntos 'dedo' tocando la garganta para sentir que la 'd' vibra.",
+    },
+    "/k/": {
+        "tipo": "oclusiva velar sorda",
+        "omision": (
+            "La omisión de /k/ indica dificultad para elevar el postdorso lingual. "
+            "Trabajar con juegos de gárgaras para activar la zona posterior de la lengua. "
+            "Bombardeo auditivo con: casa, coco, cuna, carro."
+        ),
+        "sustitucion": (
+            "La sustitución /k/→/t/ es fronting velar, frecuente hasta los 3.5 años. "
+            "Trabajar discriminación auditiva k/t, pares mínimos casa/tasa, coco/toco. "
+            "Explicar que la 'k' se hace 'atrás' con la lengua. Resolución espontánea "
+            "esperada antes de los 4 años; derivar si persiste."
+        ),
+        "padres_omision": "Hagan gárgaras juntos para activar la parte trasera de la lengua. Luego digan 'ca-ca-ca' exagerando. Practiquen: casa, coche, cuna.",
+        "padres_sustitucion": "Si dice 'tasa' por 'casa': explíquele que la 'c/k' se hace con la parte de atrás de la lengua, como haciendo gárgaras. Practiquen 'coco' y 'toco' alternando.",
+    },
+    "/g/": {
+        "tipo": "oclusiva velar sonora",
+        "omision": (
+            "La omisión de /g/ es análoga a /k/. Verificar si ocurre solo en posición "
+            "intervocálica (aproximación normal en español) o en todos los contextos. "
+            "Trabajar junto con /k/ por similitud articulatoria."
+        ),
+        "sustitucion": (
+            "La sustitución /g/→/d/ es fronting velar sonoro. Trabajar junto con /k/→/t/. "
+            "Pares mínimos: gato/dato, goma/doma. Resolución esperada antes de los 4 años."
+        ),
+        "padres_omision": "Similar a la 'c/k' pero con voz. Practiquen 'gato', 'goma', 'agua' exagerando el sonido. La lengua va atrás igual que en la 'c'.",
+        "padres_sustitucion": "Si dice 'dato' por 'gato': la 'g' se hace igual que la 'c' pero con vibración. Practiquen gato/dato y coco/gogo alternando.",
+    },
+    "/f/": {
+        "tipo": "fricativa labiodental",
+        "omision": (
+            "La omisión de /f/ indica dificultad en la coordinación labio-dental. "
+            "Trabajar posición articulatoria: incisivos superiores sobre labio inferior, "
+            "soplando suavemente. Usar espejo y papel tissue."
+        ),
+        "sustitucion": (
+            "La sustitución /f/→/p/ (stopping) es frecuente hasta los 3 años. "
+            "Trabajar flujo de aire continuo frente a vela o papel: la 'f' sopla sin cortar, "
+            "la 'p' corta el aire. Pares mínimos: foca/poca, feo/peo."
+        ),
+        "padres_omision": "Ponga los dientes de arriba sobre el labio de abajo y sople suave: ese es el sonido 'f'. Practiquen frente al espejo con 'foca', 'foco', 'feo'.",
+        "padres_sustitucion": "Si dice 'poca' por 'foca': la 'f' sopla aire continuo (como el viento), la 'p' lo corta. Soplen juntos una vela sin apagarla diciendo 'ffff'.",
+    },
+    "/n/": {
+        "tipo": "nasal alveolar",
+        "omision": (
+            "La omisión de /n/ en posición final es frecuente. Trabajar con palabras "
+            "que terminan en /n/: pan, tren, camión. Verificar audición periférica si "
+            "el error es sistemático en todas las posiciones."
+        ),
+        "sustitucion": (
+            "La sustitución /n/→/m/ indica confusión de punto articulatorio entre nasales. "
+            "Trabajar diferenciación táctil: /m/ cierra labios, /n/ lengua al paladar. "
+            "Pares mínimos: nada/mada, nene/meme."
+        ),
+        "padres_omision": "Practiquen palabras que terminan en 'n': pan, tren, limón, camión. Exageren el final 'n' al pronunciarlas.",
+        "padres_sustitucion": "Para la 'n' la lengua sube al paladar, para la 'm' los labios se cierran. Practiquen tocando labios vs. paladar al decir 'mamá' y 'nana'.",
+    },
+    "/l/": {
+        "tipo": "lateral alveolar",
+        "omision": (
+            "La omisión de /l/ tiene alto impacto en inteligibilidad. Requiere atención "
+            "prioritaria. Trabajar posición alveolar de lengua y flujo lateral del aire. "
+            "Palabras objetivo: luna, lago, llave, pelota."
+        ),
+        "sustitucion": (
+            "La sustitución /l/→/r/ o /l/→/d/ son los errores más comunes. "
+            "Diferenciar /l/ (lengua estática en alveolar, aire por lados) de /r/ "
+            "(lengua vibra). Si persiste después de los 4.5 años, derivar a fonoaudiología."
+        ),
+        "padres_omision": "Ponga la lengua tocando el paladar justo detrás de los dientes y diga 'la-la-la'. Practiquen: luna, lago, llave. Es importante trabajarlo pronto.",
+        "padres_sustitucion": "Si dice 'runa' por 'luna': la 'l' tiene la lengua quieta tocando arriba, la 'r' vibra. Digan 'la-la-la' lentamente con la lengua pegada al paladar.",
+    },
+}
+
+_INTERPRETACION_CLINICA = {
+    "Normal": (
+        "El perfil fonológico es consistente con el desarrollo esperado para el rango etario. "
+        "No se requiere intervención activa. Seguimiento rutinario."
+    ),
+    "Seguimiento activo": (
+        "El perfil presenta errores que no configuran riesgo severo pero ameritan monitoreo. "
+        "Re-evaluación recomendada en 3 meses. Considerar derivación si los errores afectan "
+        "la inteligibilidad o persisten sin mejoría."
+    ),
+    "Atención requerida": (
+        "El perfil evidencia dificultades significativas en múltiples fonemas con impacto "
+        "en la inteligibilidad. Se recomienda derivación a evaluación fonoaudiológica completa "
+        "para diagnóstico diferencial y planificación de intervención."
+    ),
+}
+
+_INTERPRETACION_PADRES = {
+    "Normal": "La pronunciación de su niño/a está dentro de lo esperado. Continúe con lectura de cuentos y conversación cotidiana.",
+    "Seguimiento activo": "Se recomienda una nueva evaluación en 3 meses para verificar la evolución.",
+    "Atención requerida": "Se recomienda consultar con un fonoaudiólogo para orientación personalizada.",
+}
+
+
+def _generar_nota_clinica(pffb: float, nivel: str, pff_por_fonema: list) -> str:
+    partes = []
+    partes.append(
+        f"Cribado fonológico completado con PFFB de {pffb:.2f}% (nivel: {nivel})."
+    )
+
+    con_error = [(f, p, e) for f, p, e in pff_por_fonema if p < 100]
+
+    if not con_error:
+        partes.append("No se detectaron errores fonémicos en los fonemas evaluados.")
+    else:
+        for fon, pff, error in con_error:
+            info = _CONOCIMIENTO_FONEMA.get(fon)
+            if not info:
+                continue
+            error_lower = (error or "").lower()
+            if "omis" in error_lower:
+                consejo = info.get("omision", "")
+            elif "sustit" in error_lower:
+                consejo = info.get("sustitucion", "")
+            else:
+                consejo = (
+                    f"Se detectó {error} en {fon} ({info['tipo']}). "
+                    "Se recomienda evaluación articulatoria detallada."
+                )
+            if consejo:
+                partes.append(f"{fon} — PFF {pff:.2f}%: {consejo}")
+
+    partes.append(_INTERPRETACION_CLINICA.get(nivel, ""))
+    return "\n\n".join(p for p in partes if p)
+
+
+def _generar_nota_representantes(pffb: float, nivel: str, pff_por_fonema: list) -> str:
+    partes = []
+
+    if nivel == "Normal":
+        partes.append(f"Su niño/a obtuvo {pffb:.2f}% en la evaluación de pronunciación, dentro del rango esperado para su edad.")
+    elif nivel == "Seguimiento activo":
+        partes.append(f"Su niño/a obtuvo {pffb:.2f}% en la evaluación. Pronuncia bien la mayoría de los sonidos; los siguientes merecen refuerzo en casa:")
+    else:
+        partes.append(f"Su niño/a obtuvo {pffb:.2f}% en la evaluación. Se detectaron dificultades en los siguientes sonidos:")
+
+    con_error = [(f, p, e) for f, p, e in pff_por_fonema if p < 100]
+    for fon, pff, error in con_error:
+        info = _CONOCIMIENTO_FONEMA.get(fon)
+        if not info:
+            continue
+        error_lower = (error or "").lower()
+        if "omis" in error_lower:
+            consejo = info.get("padres_omision", "")
+        elif "sustit" in error_lower:
+            consejo = info.get("padres_sustitucion", "")
+        else:
+            consejo = info.get("padres_omision", "")
+        if consejo:
+            partes.append(f"Sonido {fon}: {consejo}")
+
+    partes.append(_INTERPRETACION_PADRES.get(nivel, ""))
+    return "\n\n".join(p for p in partes if p)

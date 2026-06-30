@@ -41,17 +41,15 @@
 <div id="sessions-list">
   {% if sessions %}
     {% for s in sessions %}
-    <div class="card session-card" data-id="{{ s.session_id }}"
-         style="cursor:pointer; transition: box-shadow 0.15s;"
+    <div class="session-card" data-id="{{ s.session_id }}"
+         style="cursor:pointer; transition: box-shadow 0.15s; background:var(--white);
+                border-radius:var(--radius); padding:16px 20px; margin-bottom:10px;
+                box-shadow:var(--shadow-sm); border:1px solid var(--gray-100);"
          onclick="openSession('{{ s.session_id }}')">
       <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px;">
         <div style="min-width:0; flex:1;">
           <p style="font-weight:700; font-size:1rem; color:var(--blue);
-             white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-            {{ s.child_name }}
-            <span style="font-size:0.75rem; font-weight:400; color:var(--gray-400);
-                   font-family:var(--font-mono); margin-left:5px;">#{{ s.session_id }}</span>
-          </p>
+             font-family:var(--font-mono);">#{{ s.session_id }}</p>
           <p style="font-size:0.78rem; color:var(--gray-400); margin-top:2px;">
             {{ s.child_dob }}
             {% if s.child_age_months %}
@@ -63,18 +61,12 @@
              font-family:var(--font-mono);">{{ s.started_at[:10] }}</p>
         </div>
         <div style="display:flex; flex-direction:column; align-items:flex-end; gap:6px; flex-shrink:0;">
-          {% if s.status == 'done' %}
-            <span class="badge badge-teal">Completada</span>
-            {% if s.pffb is not none %}
-            <span style="font-size:0.82rem; font-weight:700; color:var(--blue);
-                   font-family:var(--font-mono);">
-              PFFB {{ s.pffb }}%
-            </span>
-            {% endif %}
-          {% elif s.status == 'cancelled' %}
-            <span class="badge badge-red">Cancelada</span>
-          {% else %}
-            <span class="badge badge-amber">Activa</span>
+          <span class="badge badge-teal">Finalizada</span>
+          {% if s.pffb is not none %}
+          <span style="font-size:0.82rem; font-weight:700; color:var(--blue);
+                 font-family:var(--font-mono);">
+            PFFB {{ "%.2f"|format(s.pffb) }}%
+          </span>
           {% endif %}
         </div>
       </div>
@@ -99,7 +91,7 @@
 
     <!-- Encabezado del modal -->
     <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
-      <p class="modal-title" id="modal-name" style="margin-bottom:0;">—</p>
+      <p class="modal-title" id="modal-name" style="margin-bottom:0; font-family:var(--font-mono);">—</p>
       <button onclick="closeSessionModal()"
               style="background:none; border:none; font-size:1.2rem; cursor:pointer;
                      color:var(--gray-400); padding:4px;">✕</button>
@@ -211,23 +203,19 @@
     <div style="display:flex; flex-direction:column; gap:8px; margin-top:4px;">
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
         <button class="btn btn-blue btn-sm" onclick="printSession()">
-          🖨 Exportar PDF
+          🖨 PDF clínico
         </button>
-        <button class="btn btn-outline btn-sm" onclick="exportZip()">
-          📦 Exportar ZIP
+        <button class="btn btn-outline btn-sm" onclick="printRepresentantes()">
+          🖨 PDF padres
         </button>
       </div>
-      <button class="btn btn-outline btn-sm" id="modal-btn-json"
-              onclick="exportJson()" style="font-size:0.8rem;">
-        { } Exportar JSON
-      </button>
+      <!-- Ocultos pero funcionales -->
+      <div style="display:none;">
+        <button onclick="exportZip()">ZIP</button>
+        <button id="modal-btn-json" onclick="exportJson()">JSON</button>
+        <button id="modal-btn-delete-audio" onclick="deleteAudio()">Borrar audios</button>
+      </div>
       <hr style="border:none; border-top:1px solid rgba(27,58,92,0.08); margin:2px 0;">
-      <button id="modal-btn-delete-audio" class="btn btn-sm"
-              style="color:#92600A; border:1.5px solid rgba(233,185,73,0.5);
-                     background:var(--amber-light);"
-              onclick="deleteAudio()">
-        🗑 Borrar audios (conservar resultado)
-      </button>
       <button id="modal-btn-delete" class="btn btn-sm"
               style="color:var(--red); border:1.5px solid rgba(192,57,43,0.3);
                      background:transparent;"
@@ -249,20 +237,9 @@
 <script>
 (function () {
 
-  // ── Detectar modo desarrollo ───────────────────────────────────────────
-  // El endpoint /dev/simulate solo existe en debug; lo usamos como señal.
+  // ── Detectar modo desarrollo — deshabilitado ──────────────────────────────
   let isDebug = false;
-  (async () => {
-    try {
-      const r = await fetch("/dev/simulate", { method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "" }) });
-      isDebug = r.status !== 403;
-    } catch { isDebug = false; }
-    if (isDebug) {
-      document.getElementById("dev-controls").style.display = "block";
-    }
-  })();
+  // El bloque dev-controls nunca se muestra
 
   // ── Insertar sesión de prueba ──────────────────────────────────────────
   document.getElementById("btn-seed").addEventListener("click", async () => {
@@ -346,7 +323,7 @@
     const s = data.session;
 
     // Encabezado
-    document.getElementById("modal-name").textContent = s.child_name;
+    document.getElementById("modal-name").textContent = `#${s.session_id}`;
     document.getElementById("modal-dob").textContent = s.child_dob;
     document.getElementById("modal-age").textContent =
       s.child_age_months
@@ -409,7 +386,7 @@
       document.getElementById("modal-level").style.color = textColor;
 
       document.getElementById("modal-level-label").textContent = s.level || "—";
-      document.getElementById("modal-pffb").textContent = pffb + "%";
+      document.getElementById("modal-pffb").textContent = parseFloat(pffb).toFixed(2) + "%";
       document.getElementById("modal-level").textContent =
         pffb > 75 ? "Sin acción inmediata. Seguimiento rutinario." :
         pffb >= 50 ? "Monitoreo. Re-evaluar en 3 meses." :
@@ -430,7 +407,7 @@
           <td style="padding:6px 4px; text-align:right; font-weight:700;
               font-family:var(--font-mono);
               color:${p.pff >= 75 ? 'var(--teal)' : p.pff >= 50 ? '#92600A' : 'var(--red)'};">
-            ${p.pff}%
+            ${parseFloat(p.pff).toFixed(2)}%
           </td>
           <td style="padding:6px 4px; text-align:center;">
             <span class="badge ${isNormal ? 'badge-teal' : 'badge-amber'}"
@@ -518,6 +495,21 @@
     if (!currentSessionId) return;
     const win = window.open(
       `/api/historial/session/${currentSessionId}/report-html`,
+      "_blank"
+    );
+    if (!win) {
+      FS.showToast("El navegador bloqueó la ventana emergente.", "error");
+      return;
+    }
+    win.addEventListener("load", () => {
+      setTimeout(() => win.print(), 300);
+    });
+  };
+
+  window.printRepresentantes = async function () {
+    if (!currentSessionId) return;
+    const win = window.open(
+      `/api/historial/session/${currentSessionId}/report-html?tipo=representantes`,
       "_blank"
     );
     if (!win) {

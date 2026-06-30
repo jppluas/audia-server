@@ -3,29 +3,11 @@
 
 {% block header_action %}
 <span class="badge badge-teal" style="font-family:var(--font-mono); font-size:0.75rem;">
-  En curso
+  #{{ state.session_id }}
 </span>
 {% endblock %}
 
 {% block content %}
-
-<!-- Datos del niño -->
-<div class="card" style="padding: 14px 20px;">
-  <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
-    <div style="min-width:0;">
-      <p style="font-weight:700; font-size:1.1rem; color:var(--blue);
-         white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-        {{ state.child.name }}
-        <span style="font-size:0.78rem; font-weight:400; color:var(--gray-400);
-               font-family:var(--font-mono); margin-left:6px;">#{{ state.session_id }}</span>
-      </p>
-      <p style="font-size:0.78rem; color:var(--gray-400); margin-top:2px;">
-        {{ state.child.dob }}
-      </p>
-    </div>
-    <span class="badge badge-teal" id="session-badge" style="flex-shrink:0;">En curso</span>
-  </div>
-</div>
 
 <!-- Indicador de estado principal -->
 <div class="card" style="text-align:center; padding:28px 20px;">
@@ -179,7 +161,6 @@
   const wordDisplay   = document.getElementById("word-display");
   const progressFill  = document.getElementById("progress-fill");
   const progressText  = document.getElementById("progress-text");
-  const sessionBadge  = document.getElementById("session-badge");
   const noVoiceBanner = document.getElementById("no-voice-banner");
   const analysisWrap  = document.getElementById("analysis-progress-wrap");
   const analysisLabel = document.getElementById("analysis-label");
@@ -202,10 +183,6 @@
 
     // Pulso durante grabación
     iconEl.classList.toggle("pulse", !!cfg.pulse);
-
-    // Badge
-    sessionBadge.className = "badge " + cfg.badge[0];
-    sessionBadge.textContent = cfg.badge[1];
 
     // Palabra actual
     wordDisplay.style.display = cfg.showWord ? "inline-block" : "none";
@@ -278,7 +255,7 @@
   btnReset.addEventListener("click", () => {
     FS.confirm({
       title: "¿Cancelar la evaluación?",
-      body: "Se perderán todos los datos de esta sesión y volverá al registro del niño.",
+      body: "Se perderán todos los datos de esta sesión y volverá al registro.",
       confirmLabel: "Sí, cancelar",
       confirmClass: "btn-danger",
       onConfirm: async () => {

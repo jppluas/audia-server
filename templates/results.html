@@ -9,124 +9,111 @@
 
 {% block content %}
 
+{% set score = state.results.score if state.results else None %}
+{% set level = state.results.level if state.results else '—' %}
+
 <!-- Score principal -->
-<div class="card" style="text-align:center;">
-  <div class="card-header" style="justify-content:center; margin-bottom:20px;">
-    <span class="card-icon teal">📊</span>
-    <div>
-      <p class="card-title" style="font-size:1.1rem;">
-        {{ state.child.name if state.child }}
-      </p>
-      <p class="card-subtitle">
-        Evaluación fonológica ·
-        {% if state.started_at %}{{ state.started_at[:10] }}{% endif %}
-      </p>
-    </div>
-  </div>
-
-  <div class="score-ring-wrap">
-    <div class="score-ring">
-      <svg viewBox="0 0 120 120" width="120" height="120">
-        <circle cx="60" cy="60" r="52" fill="none"
-                stroke="var(--gray-100)" stroke-width="12"/>
-        <circle cx="60" cy="60" r="52" fill="none"
-                stroke="var(--teal)" stroke-width="12"
-                stroke-linecap="round"
-                stroke-dasharray="327"
-                stroke-dashoffset="{{ 327 - (327 * (state.results.score / 100)) | int if state.results else 327 }}"
-                id="score-arc"/>
-      </svg>
-      <div class="score-text">
-        <span id="score-num">{{ state.results.score if state.results else '—' }}</span>
-        <small>/ 100</small>
-      </div>
-    </div>
-    <p id="score-level" style="font-size:0.9rem; font-weight:600; color:var(--blue);
-       text-align:center; max-width:220px; line-height:1.4;">
-      {{ state.results.level if state.results else '—' }}
-    </p>
-  </div>
+<div class="card" style="text-align:center; padding:24px 20px;">
+  <p style="font-size:0.75rem; font-weight:600; text-transform:uppercase;
+     letter-spacing:0.06em; margin-bottom:6px; color:var(--gray-400);">
+    Resultado global
+  </p>
+  <p id="score-display" style="font-size:3rem; font-weight:800;
+     font-family:var(--font-mono); line-height:1.1; margin-bottom:6px;">
+    {{ "%.2f"|format(score) if score is not none else '—' }}%
+  </p>
+  <p id="level-display" style="font-size:1rem; font-weight:700;">
+    {{ level }}
+  </p>
+  <p style="font-size:0.82rem; color:var(--gray-400); margin-top:6px;">
+    {{ state.started_at[:10] if state.started_at else '' }}
+  </p>
 </div>
 
-<!-- Detalle por fonema -->
-{% if state.results and state.results.details %}
-<div class="card">
-  <div class="card-header">
-    <span class="card-icon teal">🔤</span>
-    <div>
-      <p class="card-title">Detalle por fonema</p>
-      <p class="card-subtitle">Desempeño individual</p>
-    </div>
-  </div>
-
-  {% for item in state.results.details %}
-  <div class="phoneme-row">
-    <span class="phoneme-sym">{{ item.phoneme }}</span>
-    <div class="phoneme-bar-wrap">
-      <div class="progress-track">
-        <div class="progress-fill" style="width:{{ item.score }}%;
-          background: {% if item.score < 60 %}linear-gradient(90deg,var(--red),#e74c3c)
-          {% elif item.score < 80 %}linear-gradient(90deg,var(--amber),#f39c12)
-          {% else %}linear-gradient(90deg,var(--teal),var(--blue-mid)){% endif %};">
-        </div>
-      </div>
-    </div>
-    <span class="phoneme-score" style="color:
-      {% if item.score < 60 %}var(--red)
-      {% elif item.score < 80 %}#92600A
-      {% else %}var(--teal){% endif %};">
-      {{ item.score }}%
-    </span>
-    <span class="phoneme-flag">{{ '⚠️' if item.flag else '' }}</span>
-  </div>
-  {% endfor %}
-</div>
-{% endif %}
-
-<!-- Descarga de informes -->
-<div class="card">
-  <div class="card-header">
-    <span class="card-icon blue">📄</span>
-    <div>
-      <p class="card-title">Informes</p>
-      <p class="card-subtitle">Descargue para compartir o archivar</p>
-    </div>
-  </div>
-
-  <div style="display:flex; flex-direction:column; gap:10px;">
-    <a href="/api/report/tecnico" class="btn btn-blue btn-full">
-      ⬇ Informe técnico (PDF)
-    </a>
-    <a href="/api/report/representantes" class="btn btn-outline btn-full">
-      ⬇ Informe para representantes (PDF)
-    </a>
-  </div>
+<!-- Desempeño por fonema — cargado desde BD -->
+<div class="card" id="phonemes-card" style="display:none;">
+  <p style="font-size:0.82rem; font-weight:700; color:var(--blue);
+     margin-bottom:10px; text-transform:uppercase; letter-spacing:0.04em;">
+    Desempeño por fonema
+  </p>
+  <table style="width:100%; border-collapse:collapse; font-size:0.82rem;">
+    <thead>
+      <tr style="border-bottom:2px solid rgba(27,58,92,0.1);">
+        <th style="text-align:left; padding:6px 4px; color:var(--gray-700); font-weight:600;">Fonema</th>
+        <th style="text-align:right; padding:6px 4px; color:var(--gray-700); font-weight:600;">PFF%</th>
+        <th style="text-align:center; padding:6px 4px; color:var(--gray-700); font-weight:600;">Nivel</th>
+        <th style="text-align:left; padding:6px 4px; color:var(--gray-700); font-weight:600;">Error predominante</th>
+      </tr>
+    </thead>
+    <tbody id="phonemes-tbody"></tbody>
+  </table>
 </div>
 
-<!-- Nueva sesión -->
-<button class="btn btn-primary btn-full btn-lg" id="btn-new">
+<p style="font-size:0.78rem; color:var(--gray-400); text-align:center;
+   font-style:italic; padding:0 16px; line-height:1.5;">
+  Para el reporte completo con detalle por palabra e informes descargables,
+  ir al historial.
+</p>
+
+<a href="/historial" class="btn btn-blue btn-full btn-lg"
+   style="text-align:center; display:block; margin-top:8px;">
+  📋 Ir al historial
+</a>
+
+<a href="/registro" class="btn btn-outline btn-full btn-lg" style="text-align:center; display:block; margin-top:8px;">
   + Nueva evaluación
-</button>
+</a>
 
 {% endblock %}
 
 {% block scripts %}
 <script>
 (function () {
-  // Animación del arco del score al cargar
-  const arc   = document.getElementById("score-arc");
-  const score = {{ state.results.score if state.results else 0 }};
-  if (arc && score) {
-    const target = 327 - (327 * score / 100);
-    arc.style.transition = "stroke-dashoffset 1s ease";
-    setTimeout(() => { arc.style.strokeDashoffset = target; }, 100);
+
+  // ── Colorear score según nivel ─────────────────────────────────────────
+  const score = {{ score if score is not none else 'null' }};
+  const scoreEl = document.getElementById("score-display");
+  const levelEl = document.getElementById("level-display");
+  if (score !== null) {
+    const color = score > 75 ? "var(--teal)" : score >= 50 ? "#92600A" : "var(--red)";
+    scoreEl.style.color = color;
+    levelEl.style.color = color;
   }
 
-  // Nueva sesión
-  document.getElementById("btn-new").addEventListener("click", async () => {
-    await FS.api("/api/session/reset", "POST");
-    window.location.href = "/registro";
-  });
+  // ── Cargar fonemas desde BD ────────────────────────────────────────────
+  const sessionId = "{{ state.session_id }}";
+  if (sessionId) {
+    (async () => {
+      try {
+        const { ok, data } = await FS.api(`/api/historial/session/${sessionId}`);
+        if (!ok || !data.phoneme_summary || !data.phoneme_summary.length) return;
+
+        const tbody = document.getElementById("phonemes-tbody");
+        data.phoneme_summary.forEach(p => {
+          const pff = parseFloat(p.pff).toFixed(2);
+          const c = p.pff >= 75 ? "var(--teal)" : p.pff >= 50 ? "#92600A" : "var(--red)";
+          const tr = document.createElement("tr");
+          tr.style.borderBottom = "1px solid var(--gray-100)";
+          tr.innerHTML = `
+            <td style="padding:6px 4px; font-weight:700; color:var(--blue);">${p.phoneme}</td>
+            <td style="padding:6px 4px; text-align:right; font-family:var(--font-mono);
+                       font-weight:700; color:${c};">${pff}%</td>
+            <td style="padding:6px 4px; text-align:center; font-size:0.78rem; color:${c};">
+              ${p.level}
+            </td>
+            <td style="padding:6px 4px; font-size:0.78rem; color:var(--gray-700);">
+              ${p.error_predominant || '—'}
+            </td>`;
+          tbody.appendChild(tr);
+        });
+
+        document.getElementById("phonemes-card").style.display = "block";
+      } catch (e) {
+        console.warn("No se pudieron cargar fonemas:", e);
+      }
+    })();
+  }
+
 })();
 </script>
 {% endblock %}
