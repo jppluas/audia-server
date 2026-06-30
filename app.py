@@ -51,6 +51,10 @@ app.secret_key = os.environ.get("FONOSCREEN_SECRET", "dev-secret-fonoscreen")
 # Inicializar la base de datos (crea tablas si no existen)
 db.init()
 
+# Limpiar sesiones huérfanas de arranques anteriores
+# Cualquier sesión 'active' o 'cancelled' en BD es basura — el servidor acaba de iniciar
+db.purge_incomplete_sessions()
+
 # ─── Estado global de sesión ──────────────────────────────────────────────────
 # En el Pi un solo evaluador opera el dispositivo; no se necesita BD.
 # El estado se resetea al reiniciar el servidor (comportamiento correcto).
@@ -88,10 +92,17 @@ def index():
 
 @app.route("/registro")
 def register():
+    global _session_state
     state = get_state()
-    if state["active"] and state["status"] not in ("done", "error"):
+    if state.get("status") in ("done", "error"):
+        _session_state = {
+            "active": False, "session_id": None, "child": {},
+            "current_item": 0, "total_items": 20, "status": "idle",
+            "results": None, "started_at": None,
+        }
+    elif state["active"] and state["status"] not in ("done", "error"):
         return redirect(url_for("session_view"))
-    return render_template("register.html", state=state)
+    return render_template("register.html", state=get_state())
 
 
 @app.route("/api/session/start", methods=["POST"])
@@ -114,7 +125,7 @@ def api_session_start():
         }), 507
 
     data = request.get_json(silent=True) or {}
-    required = ["name", "dob", "gender"]
+    required = ["dob", "gender"]
     for field in required:
         if not data.get(field):
             return jsonify({"ok": False, "error": f"Campo requerido: {field}"}), 400
@@ -124,11 +135,9 @@ def api_session_start():
         "active": True,
         "session_id": session_id,
         "child": {
-            "name":   data["name"].strip(),
             "dob":    data["dob"],
             "gender": data["gender"],
             "notes":  data.get("notes", "").strip(),
-            # anamnesis estructurada
             "anamnesis_otitis":         data.get("anamnesis_otitis", 0),
             "anamnesis_hearing_dx":     data.get("anamnesis_hearing_dx"),
             "anamnesis_home_language":  data.get("anamnesis_home_language", "español"),
@@ -146,14 +155,13 @@ def api_session_start():
         "started_at": datetime.now().isoformat(),
     }
 
-    log.info("Sesión iniciada: %s — %s", session_id, data["name"])
+    log.info("Sesión iniciada: %s", session_id)
 
-    # Persistir en la base de datos
     db.create_session(session_id, _session_state["child"], _session_state["started_at"])
 
-    # TODO: aquí se lanza el pipeline en un hilo separado
-    # from pipeline import run_pipeline
-    # threading.Thread(target=run_pipeline, args=(session_id,), daemon=True).start()
+    from pipeline import run_pipeline
+    import threading
+    threading.Thread(target=run_pipeline, args=(session_id, _session_state), daemon=True).start()
 
     return jsonify({"ok": True, "session_id": session_id})
 
@@ -199,23 +207,26 @@ def api_session_resume():
 
 @app.route("/api/session/reset", methods=["POST"])
 def api_session_reset():
-    """Cancela la sesión actual y vuelve a registro."""
+    """Cancela la sesión actual — borra BD y audios si no está finalizada."""
     global _session_state
     old_id = _session_state.get("session_id")
-    # Marcar como cancelada en la BD si había sesión activa
-    if old_id and _session_state.get("active"):
+    status = _session_state.get("status")
+
+    # Si la sesión no está finalizada, borrar completamente
+    if old_id and _session_state.get("active") and status != "done":
         try:
-            db.cancel_session(old_id)
+            db.delete_session(old_id)
         except Exception as e:
-            log.warning("No se pudo cancelar sesión en BD: %s", e)
+            log.warning("No se pudo borrar sesión cancelada: %s", e)
+
+    # Siempre resetear el estado en memoria
     _session_state = {
         "active": False, "session_id": None, "child": {},
         "current_item": 0, "total_items": 20, "status": "idle",
         "results": None, "started_at": None,
     }
-    log.info("Sesión %s reiniciada/cancelada.", old_id)
+    log.info("Sesión %s reseteada (status previo: %s).", old_id, status)
     return jsonify({"ok": True})
-
 
 # ── Resultados ────────────────────────────────────────────────────────────────
 
@@ -275,117 +286,130 @@ def api_set_volume():
         return jsonify({"ok": False, "error": "Nivel inválido (0-100)."}), 400
     level = int(level)
     try:
+        # wpctl funciona con PipeWire en Pi y laptop
         subprocess.run(
-            ["amixer", "sset", "Master", f"{level}%"],
+            ["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", f"{level}%"],
             capture_output=True, check=True
         )
         log.info("Volumen ajustado a %d%%", level)
         return jsonify({"ok": True, "level": level})
     except (subprocess.CalledProcessError, FileNotFoundError) as e:
-        log.warning("amixer no disponible o falló: %s", e)
-        # En laptop de desarrollo, simulamos éxito
-        return jsonify({"ok": True, "level": level, "simulated": not IS_PI})
+        log.warning("wpctl falló: %s", e)
+        return jsonify({"ok": False, "error": str(e)})
 
 
 @app.route("/api/device/volume", methods=["GET"])
 def api_get_volume():
     try:
         result = subprocess.run(
-            ["amixer", "sget", "Master"],
+            ["wpctl", "get-volume", "@DEFAULT_AUDIO_SINK@"],
             capture_output=True, text=True, check=True
         )
-        # Parsear línea: "Mono: Playback 65536 [100%] [on]"
+        # Output: "Volume: 0.80"
         import re
-        match = re.search(r"\[(\d+)%\]", result.stdout)
-        level = int(match.group(1)) if match else 80
+        match = re.search(r"[\d.]+", result.stdout)
+        level = int(float(match.group()) * 100) if match else 80
         return jsonify({"ok": True, "level": level})
-    except Exception:
+    except Exception as e:
+        log.warning("No se pudo leer volumen: %s", e)
         return jsonify({"ok": True, "level": 80, "simulated": True})
+
+
+@app.route("/api/device/mic/volume", methods=["GET"])
+def api_get_mic_volume():
+    try:
+        result = subprocess.run(
+            ["wpctl", "get-volume", "@DEFAULT_AUDIO_SOURCE@"],
+            capture_output=True, text=True, check=True
+        )
+        import re
+        match = re.search(r"[\d.]+", result.stdout)
+        level = int(float(match.group()) * 100) if match else 80
+        return jsonify({"ok": True, "level": level})
+    except Exception as e:
+        log.warning("No se pudo leer volumen de micrófono: %s", e)
+        return jsonify({"ok": True, "level": 80, "simulated": True})
+
+
+@app.route("/api/device/mic/volume", methods=["POST"])
+def api_set_mic_volume():
+    data = request.get_json(silent=True) or {}
+    level = data.get("level")
+    if level is None or not (0 <= int(level) <= 100):
+        return jsonify({"ok": False, "error": "Nivel inválido (0-100)."}), 400
+    level = int(level)
+    try:
+        subprocess.run(
+            ["wpctl", "set-volume", "@DEFAULT_AUDIO_SOURCE@", f"{level}%"],
+            capture_output=True, check=True
+        )
+        log.info("Volumen de micrófono ajustado a %d%%", level)
+        return jsonify({"ok": True, "level": level})
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        log.warning("wpctl mic falló: %s", e)
+        return jsonify({"ok": False, "error": str(e)})
 
 
 @app.route("/api/device/tone", methods=["POST"])
 def api_tone():
-    """Reproduce un tono de prueba por el parlante del dispositivo."""
-    if not IS_PI:
-        return jsonify({"ok": True, "simulated": True})
+    """Reproduce un tono de prueba — usa pw-play con PipeWire."""
     try:
-        # sox genera el tono directamente: 1 kHz, 1.5 segundos, volumen 70%
-        subprocess.run(
-            ["sox", "-n", "-d", "synth", "1.5", "sine", "1000", "vol", "0.7"],
-            capture_output=True, check=True, timeout=5
-        )
+        import struct, math
+        sample_rate = 44100
+        n_samples = int(sample_rate * 1.5)
+        freq = 1000
+        tone_file = "/tmp/fonoscreen_tone.wav"
+        with open(tone_file, "wb") as f:
+            data_size = n_samples * 2
+            f.write(b"RIFF")
+            f.write(struct.pack("<I", 36 + data_size))
+            f.write(b"WAVEfmt ")
+            f.write(struct.pack("<IHHIIHH", 16, 1, 1, sample_rate,
+                                sample_rate * 2, 2, 16))
+            f.write(b"data")
+            f.write(struct.pack("<I", data_size))
+            for i in range(n_samples):
+                val = int(32767 * 0.5 * math.sin(2 * math.pi * freq * i / sample_rate))
+                f.write(struct.pack("<h", val))
+        subprocess.run(["pw-play", tone_file],
+                       capture_output=True, check=True, timeout=5)
         return jsonify({"ok": True})
-    except FileNotFoundError:
-        # sox no instalado, intentar con aplay + archivo WAV generado con python
-        try:
-            import struct, math
-            sample_rate = 44100
-            duration = 1.5
-            freq = 1000
-            n_samples = int(sample_rate * duration)
-            tone_file = "/tmp/fonoscreen_tone.wav"
-            with open(tone_file, "wb") as f:
-                # WAV header
-                data_size = n_samples * 2
-                f.write(b"RIFF")
-                f.write(struct.pack("<I", 36 + data_size))
-                f.write(b"WAVEfmt ")
-                f.write(struct.pack("<IHHIIHH", 16, 1, 1, sample_rate,
-                                    sample_rate * 2, 2, 16))
-                f.write(b"data")
-                f.write(struct.pack("<I", data_size))
-                for i in range(n_samples):
-                    val = int(32767 * 0.5 * math.sin(2 * math.pi * freq * i / sample_rate))
-                    f.write(struct.pack("<h", val))
-            subprocess.run(["aplay", tone_file],
-                           capture_output=True, check=True, timeout=5)
-            return jsonify({"ok": True})
-        except Exception as e:
-            log.warning("Tono falló: %s", e)
-            return jsonify({"ok": False, "error": str(e)})
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+    except Exception as e:
         log.warning("Tono falló: %s", e)
         return jsonify({"ok": False, "error": str(e)})
 
 
-# Proceso de grabación en curso (global para poder matarlo desde /stop)
+# Globals para grabación de prueba
 _mic_process = None
+_mic_stream   = None
+_mic_frames   = []
 MIC_TEST_FILE = "/tmp/fonoscreen_mic_test.wav"
 
 
 @app.route("/api/device/mic/start", methods=["POST"])
 def api_mic_start():
-    """Inicia grabación con arecord. El proceso queda corriendo hasta /stop."""
+    """Inicia grabación de prueba con pw-record (PipeWire)."""
     global _mic_process
-    if not IS_PI:
-        log.info("Grabación de micrófono simulada (no es Pi).")
-        _mic_process = "simulated"
-        return jsonify({"ok": True, "simulated": True})
-    if _mic_process and _mic_process != "simulated":
+    if _mic_process:
         try:
             _mic_process.terminate()
         except Exception:
             pass
     try:
-        # Sin -d: graba indefinidamente hasta que lo matemos
         _mic_process = subprocess.Popen(
-            ["arecord", "-f", "cd", "-t", "wav", MIC_TEST_FILE],
+            ["pw-record", MIC_TEST_FILE],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
-        log.info("Grabación iniciada, PID %s", _mic_process.pid)
+        log.info("Grabación iniciada con pw-record, PID %s", _mic_process.pid)
         return jsonify({"ok": True})
     except FileNotFoundError:
-        return jsonify({"ok": False, "error": "arecord no disponible en este entorno.",
-                        "simulated": True})
+        return jsonify({"ok": False, "error": "pw-record no disponible."})
 
 
 @app.route("/api/device/mic/stop", methods=["POST"])
 def api_mic_stop():
     """Detiene la grabación en curso."""
     global _mic_process
-    if _mic_process == "simulated":
-        _mic_process = None
-        return jsonify({"ok": True, "simulated": True})
     if _mic_process is None:
         return jsonify({"ok": False, "error": "No hay grabación activa."})
     try:
@@ -396,25 +420,23 @@ def api_mic_stop():
         return jsonify({"ok": True})
     except Exception as e:
         _mic_process = None
-        log.warning("Error al detener grabación: %s", e)
         return jsonify({"ok": False, "error": str(e)})
 
 
 @app.route("/api/device/mic/play", methods=["POST"])
 def api_mic_play():
-    """Reproduce el archivo grabado por el parlante del dispositivo."""
-    if not IS_PI:
-        return jsonify({"ok": True, "simulated": True})
+    """Reproduce el archivo grabado con pw-play (PipeWire)."""
     try:
+        if not Path(MIC_TEST_FILE).exists():
+            return jsonify({"ok": False, "error": "No hay grabación disponible."})
         subprocess.run(
-            ["aplay", MIC_TEST_FILE],
+            ["pw-play", MIC_TEST_FILE],
             capture_output=True, check=True, timeout=30
         )
         return jsonify({"ok": True})
-    except FileNotFoundError:
-        return jsonify({"ok": False, "error": "aplay no disponible en este entorno.",
-                        "simulated": True})
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+        return jsonify({"ok": False, "error": str(e)})
+    except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
 
 
@@ -436,19 +458,6 @@ def api_reboot():
     log.info("Reiniciando dispositivo.")
     subprocess.Popen(["sudo", "reboot"])
     return jsonify({"ok": True})
-
-
-@app.route("/api/device/devmode", methods=["POST"])
-def api_devmode():
-    """Activa modo desarrollo: desactiva hotspot y conecta al Wi-Fi de casa."""
-    if not IS_PI:
-        return jsonify({"ok": True, "simulated": True})
-    try:
-        subprocess.run(["sudo", "/usr/local/bin/modo-dev"], timeout=30, check=False )
-        log.info("Modo desarrollo activado desde la interfaz.")
-        return jsonify({"ok": True})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)})
 
 
 @app.route("/api/device/status")
@@ -561,8 +570,6 @@ def api_historial_export_zip(session_id):
     if not data:
         return jsonify({"ok": False, "error": "Sesión no encontrada."}), 404
 
-    child_name = data["session"]["child_name"].replace(" ", "_")
-
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
 
@@ -577,10 +584,9 @@ def api_historial_export_zip(session_id):
             from weasyprint import HTML as WP_HTML
             html_str = generate_report_html(data)
             pdf_bytes = WP_HTML(string=html_str).write_pdf()
-            zf.writestr(f"informe_{child_name}_{session_id}.pdf", pdf_bytes)
+            zf.writestr(f"informe_{session_id}.pdf", pdf_bytes)
         except Exception as e:
             log.warning("weasyprint falló al generar PDF para ZIP: %s", e)
-            # Incluir nota de error en vez de fallar todo el ZIP
             zf.writestr(
                 "informe_ERROR.txt",
                 f"No se pudo generar el PDF: {e}\n"
@@ -596,7 +602,7 @@ def api_historial_export_zip(session_id):
                 zf.write(wav, f"audios/{wav.name}")
 
     buf.seek(0)
-    filename = f"fonoscreen_{child_name}_{session_id}.zip"
+    filename = f"fonoscreen_{session_id}.zip"
     return send_file(
         buf,
         mimetype="application/zip",
@@ -607,11 +613,12 @@ def api_historial_export_zip(session_id):
 
 @app.route("/api/historial/session/<session_id>/report-html")
 def api_historial_report_html(session_id):
-    """Devuelve el HTML del informe — mismo que usa weasyprint para el PDF."""
+    """Devuelve el HTML del informe. ?tipo=representantes muestra solo nota para padres."""
     data = db.export_session(session_id)
     if not data:
         return jsonify({"ok": False, "error": "Sesión no encontrada."}), 404
-    html = generate_report_html(data)
+    tipo = request.args.get("tipo", "clinico")
+    html = generate_report_html(data, tipo=tipo)
     return html, 200, {"Content-Type": "text/html; charset=utf-8"}
 
 

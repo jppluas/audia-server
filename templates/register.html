@@ -10,7 +10,7 @@
 
 {% block content %}
 
-<!-- Banner de espacio bajo (se muestra si el servidor avisa) -->
+<!-- Banner de espacio bajo -->
 <div id="space-warning" style="display:none; background:var(--red-light);
      border:1.5px solid rgba(192,57,43,0.3); border-radius:var(--radius-sm);
      padding:12px 16px; font-size:0.85rem; color:var(--red); line-height:1.5;">
@@ -32,12 +32,6 @@
   </div>
 
   <div style="display:flex; flex-direction:column; gap:14px;">
-    <div class="field">
-      <label for="f-name">Nombre completo</label>
-      <input type="text" id="f-name" placeholder="Ej. María José Vargas"
-             autocomplete="off" autocorrect="off" spellcheck="false" inputmode="text">
-    </div>
-
     <div class="field-row">
       <div class="field">
         <label for="f-dob">Fecha de nacimiento</label>
@@ -208,7 +202,6 @@
 <script>
 (function () {
 
-  const nameEl   = document.getElementById("f-name");
   const dobEl    = document.getElementById("f-dob");
   const genderEl = document.getElementById("f-gender");
   const notesEl  = document.getElementById("f-notes");
@@ -231,7 +224,7 @@
     } catch {}
   })();
 
-  // ── Toggle options (radios estilizados) ───────────────────────────────
+  // ── Toggle options ────────────────────────────────────────────────────
   function updateToggleStyle(radio) {
     const label = radio.closest(".toggle-option");
     if (!label) return;
@@ -247,7 +240,7 @@
     });
   });
 
-  // ── Check options (checkboxes estilizados) ────────────────────────────
+  // ── Check options ─────────────────────────────────────────────────────
   function updateCheckStyle(cb) {
     const label = cb.closest(".check-option");
     if (!label) return;
@@ -298,24 +291,17 @@
     } else {
       ageDisp.style.display = "none";
     }
-    btnStart.disabled = !(nameEl.value.trim().length >= 2 && dobEl.value && genderEl.value);
+    btnStart.disabled = !(dobEl.value && genderEl.value);
   }
 
-  [nameEl, dobEl, genderEl].forEach(el => el.addEventListener("input", validate));
+  [dobEl, genderEl].forEach(el => el.addEventListener("input", validate));
   validate();
 
-  // ── Detectar modo debug ───────────────────────────────────────────────
-  (async () => {
-    try {
-      const r = await fetch("/dev/simulate", { method:"POST",
-        headers:{"Content-Type":"application/json"}, body:JSON.stringify({action:""}) });
-      if (r.status !== 403) document.getElementById("dev-autofill").style.display = "block";
-    } catch {}
-  })();
+  // ── Detectar modo debug — deshabilitado ──────────────────────────────────
+  // document.getElementById("dev-autofill").style.display = "block";
 
   // ── Autorrelleno ──────────────────────────────────────────────────────
   document.getElementById("btn-autofill").addEventListener("click", () => {
-    nameEl.value   = "John Doe";
     dobEl.value    = "2021-03-15";
     genderEl.value = "M";
     notesEl.value  = "Sesión generada con datos de prueba.";
@@ -325,7 +311,6 @@
     document.getElementById("hearing-detail").style.display = "block";
     document.getElementById("f-hearing-dx").value = "Hipoacusia conductiva leve";
 
-    // idiomas: solo español (ya viene marcado por defecto)
     document.querySelectorAll("input[name='lang']").forEach(cb => {
       cb.checked = cb.value === "Español";
       updateCheckStyle(cb);
@@ -354,7 +339,6 @@
     const familyVal  = document.querySelector("input[name='family_history']:checked")?.value;
     const langs      = [...document.querySelectorAll("input[name='lang']:checked")]
                          .map(c => c.value);
-
     return {
       anamnesis_otitis:
         parseInt(document.querySelector("input[name='otitis']:checked")?.value || "0"),
@@ -381,7 +365,6 @@
     btnStart.innerHTML = '<span class="spinner"></span> Iniciando...';
 
     const { ok, data } = await FS.api("/api/session/start", "POST", {
-      name:   nameEl.value.trim(),
       dob:    dobEl.value,
       gender: genderEl.value,
       notes:  notesEl.value.trim(),
@@ -418,7 +401,6 @@
 .toggle-option input[type=radio] {
   position: absolute; opacity: 0; width: 0; height: 0;
 }
-
 .check-option {
   display: flex;
   align-items: center;
@@ -436,7 +418,6 @@
   accent-color: var(--blue);
   flex-shrink: 0;
 }
-
 .field-select {
   width: 100%;
   border: 1.5px solid rgba(27,58,92,0.18);

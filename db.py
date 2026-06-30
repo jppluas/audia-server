@@ -47,7 +47,6 @@ def init():
         conn.executescript("""
         CREATE TABLE IF NOT EXISTS sessions (
             session_id          TEXT PRIMARY KEY,
-            child_name          TEXT NOT NULL,
             child_dob           TEXT NOT NULL,
             child_gender        TEXT NOT NULL,
             child_age_months    INTEGER,
@@ -109,7 +108,7 @@ def init():
 def create_session(session_id: str, child: dict, started_at: str):
     """
     Crea una fila en sessions al iniciar la evaluación.
-    child = {"name", "dob", "gender", "notes",
+    child = {"dob", "gender", "notes",
              "anamnesis_otitis", "anamnesis_hearing_dx",
              "anamnesis_home_language", "anamnesis_family_history",
              "anamnesis_family_who", "anamnesis_prior_therapy"}
@@ -142,13 +141,12 @@ def create_session(session_id: str, child: dict, started_at: str):
     with _connect() as conn:
         conn.execute("""
             INSERT INTO sessions
-                (session_id, child_name, child_dob, child_gender, child_age_months,
+                (session_id, child_dob, child_gender, child_age_months,
                  notes, anamnesis_otitis, anamnesis_hearing_dx, anamnesis_home_language,
                  anamnesis_family_history, anamnesis_prior_therapy, started_at, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
         """, (
             session_id,
-            child.get("name", ""),
             child.get("dob", ""),
             child.get("gender", ""),
             age_months,
@@ -170,9 +168,45 @@ def close_session(session_id: str, pffb: float, level: str):
         """, (pffb, level, datetime.now().isoformat(), session_id))
 
 
-def cancel_session(session_id: str):
+def purge_incomplete_sessions():
+    """
+    Elimina sesiones 'active' o 'cancelled' de la BD junto con sus audios.
+    Se llama al arrancar Flask — estas sesiones son basura de reinicios anteriores.
+    """
+    import shutil
     with _connect() as conn:
-        conn.execute("UPDATE sessions SET status='cancelled' WHERE session_id=?", (session_id,))
+        rows = conn.execute(
+            "SELECT session_id FROM sessions WHERE status IN ('active', 'cancelled')"
+        ).fetchall()
+        for r in rows:
+            sid = r["session_id"]
+            # Borrar audios si existen
+            audio_dir = get_recordings_dir(sid)
+            if audio_dir.exists():
+                shutil.rmtree(audio_dir, ignore_errors=True)
+            # Borrar de BD en cascada
+            conn.execute("DELETE FROM reports           WHERE session_id=?", (sid,))
+            conn.execute("DELETE FROM phoneme_summary   WHERE session_id=?", (sid,))
+            conn.execute("DELETE FROM items             WHERE session_id=?", (sid,))
+            conn.execute("DELETE FROM sessions          WHERE session_id=?", (sid,))
+        if rows:
+            import logging
+            logging.getLogger("fonoscreen").info(
+                "Purged %d incomplete session(s) on startup.", len(rows)
+            )
+
+
+def delete_session(session_id: str):
+    """Elimina completamente una sesión: BD + audios en disco."""
+    import shutil
+    audio_dir = get_recordings_dir(session_id)
+    if audio_dir.exists():
+        shutil.rmtree(audio_dir, ignore_errors=True)
+    with _connect() as conn:
+        conn.execute("DELETE FROM reports           WHERE session_id=?", (session_id,))
+        conn.execute("DELETE FROM phoneme_summary   WHERE session_id=?", (session_id,))
+        conn.execute("DELETE FROM items             WHERE session_id=?", (session_id,))
+        conn.execute("DELETE FROM sessions          WHERE session_id=?", (session_id,))
 
 
 def get_session(session_id: str) -> dict | None:
@@ -182,12 +216,13 @@ def get_session(session_id: str) -> dict | None:
 
 
 def list_sessions(limit: int = 50) -> list[dict]:
-    """Lista las últimas sesiones. has_audio se calcula desde disco en tiempo real."""
+    """Lista las últimas sesiones finalizadas. has_audio se calcula desde disco."""
     with _connect() as conn:
         rows = conn.execute("""
-            SELECT session_id, child_name, child_dob, child_gender,
+            SELECT session_id, child_dob, child_gender,
                    child_age_months, status, pffb, level, started_at, finished_at
-            FROM sessions ORDER BY started_at DESC LIMIT ?
+            FROM sessions WHERE status = 'done'
+            ORDER BY started_at DESC LIMIT ?
         """, (limit,)).fetchall()
         sessions = []
         for r in rows:
@@ -418,7 +453,6 @@ def seed_test_session() -> str:
     started = datetime.now().isoformat()
 
     create_session(sid, {
-        "name":                     "John Doe",
         "dob":                      "2021-03-15",
         "gender":                   "M",
         "notes":                    "Sesión de prueba generada desde el panel de historial.",

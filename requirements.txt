@@ -1,2 +1,20 @@
-Flask==3.1.3
-weasyprint
+# --- Núcleo de IA y Modelos Acústicos ---
+torch>=2.0.0
+torchaudio>=2.9.0
+transformers>=4.35.0
+
+# --- Procesamiento y Manejo de Audio ---
+numpy>=1.24.0
+sounddevice>=0.4.6
+soundfile>=0.12.1
+
+# --- Conversión Fonética ---
+phonemizer>=3.2.1
+
+# --- Servidor Web (Frontend Juan Pablo) ---
+Flask>=3.0.0
+Werkzeug>=3.0.0
+
+# --- Reportes PDF e Integración LLM ---
+requests>=2.31.0
+weasyprint>=60.0

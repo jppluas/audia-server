@@ -2,27 +2,31 @@
 FonoScreen — report_html.py
 Fuente única de verdad del HTML del informe de evaluación.
 
-Usado por:
-  - app.py → api_historial_export_zip → weasyprint → PDF en memoria dentro del ZIP
-  - historial.html → printSession() → window.print() → PDF en el navegador
+tipo="clinico"        — informe completo para el especialista
+tipo="representantes" — informe simplificado para padres/cuidadores
 
-Ambas vías usan generate_report_html(data) y producen el mismo documento.
+Secciones clínico:
+  1. Identificación
+  2. Anamnesis
+  3. Resultado global
+  4. Desempeño por fonema (con error predominante)
+  5. Detalle por palabra (con tipo de error)
+  6. Nota clínica
 
-Uso:
-    from report_html import generate_report_html
-    html = generate_report_html(data)          # data = db.export_session(session_id)
-    pdf_bytes = HTML(string=html).write_pdf()  # weasyprint
+Secciones representantes:
+  1. Identificación
+  2. Anamnesis
+  3. Resultado global
+  4. Desempeño por fonema (solo nivel, sin error predominante)
+  5. Detalle por palabra (sin tipo de error)
+  6. Nota para representantes
 """
 
 from __future__ import annotations
 
 
-def generate_report_html(data: dict) -> str:
-    """
-    Genera el HTML completo del informe a partir del dict de export_session().
-    Incluye CSS inline optimizado para impresión y pantalla.
-    """
-    s   = data["session"]
+def generate_report_html(data: dict, tipo: str = "clinico") -> str:
+    s               = data["session"]
     items           = data.get("items") or []
     phoneme_summary = data.get("phoneme_summary") or []
     report          = data.get("report") or {}
@@ -35,6 +39,15 @@ def generate_report_html(data: dict) -> str:
         if not months:
             return "—"
         return f"{months // 12} años {months % 12} meses"
+
+    def fmt(val):
+        """Redondea a 2 decimales."""
+        if val is None:
+            return "—"
+        try:
+            return f"{float(val):.2f}"
+        except (ValueError, TypeError):
+            return str(val)
 
     def pffb_color(pffb):
         if pffb is None:
@@ -50,48 +63,74 @@ def generate_report_html(data: dict) -> str:
             return "Monitoreo. Re-evaluar en 3 meses."
         return "Derivación a psicólogo o fonoaudiólogo recomendada."
 
-    def result_label(result, error_type):
-        if result == "correct":       return "Correcto"
-        if result == "not_evaluable": return "No evaluable"
-        return error_type or "Error"
-
     def result_color(result):
         if result == "correct":       return "#2A9D8F"
         if result == "not_evaluable": return "#A0AEC0"
         return "#C0392B"
 
-    # ── Secciones HTML ────────────────────────────────────────────────────
+    es_rep = (tipo == "representantes")
 
-    # Tabla de fonemas
+    # ── Sección 4: Desempeño por fonema ──────────────────────────────────
     phonemes_rows = ""
     for p in phoneme_summary:
         c = "#2A9D8F" if p["pff"] >= 75 else "#92600A" if p["pff"] >= 50 else "#C0392B"
-        phonemes_rows += f"""
+        if es_rep:
+            # Para padres: solo fonema y nivel
+            phonemes_rows += f"""
         <tr>
           <td><strong>{_esc(p['phoneme'])}</strong></td>
-          <td style="color:{c}; font-weight:700;">{p['pff']}%</td>
+          <td>{p['level']}</td>
+        </tr>"""
+        else:
+            phonemes_rows += f"""
+        <tr>
+          <td><strong>{_esc(p['phoneme'])}</strong></td>
+          <td style="color:{c}; font-weight:700;">{fmt(p['pff'])}%</td>
           <td>{p['level']}</td>
           <td>{p.get('error_predominant') or 'Ninguno'}</td>
         </tr>"""
 
-    phonemes_section = f"""
+    if phonemes_rows:
+        if es_rep:
+            phonemes_section = f"""
+    <h2>4. Desempeño por fonema</h2>
+    <table class="t">
+      <thead><tr>
+        <th>Fonema</th><th>Nivel</th>
+      </tr></thead>
+      <tbody>{phonemes_rows}</tbody>
+    </table>"""
+        else:
+            phonemes_section = f"""
     <h2>4. Desempeño por fonema</h2>
     <table class="t">
       <thead><tr>
         <th>Fonema</th><th>PFF%</th><th>Nivel</th><th>Error predominante</th>
       </tr></thead>
       <tbody>{phonemes_rows}</tbody>
-    </table>""" if phonemes_rows else ""
+    </table>"""
+    else:
+        phonemes_section = ""
 
-    # Tabla de palabras
+    # ── Sección 5: Detalle por palabra ────────────────────────────────────
     items_rows = ""
     for item in items:
         rc = result_color(item.get("result", ""))
         result_str = "Correcto" if item.get("result") == "correct" \
                 else "No evaluable" if item.get("result") == "not_evaluable" \
                 else "Error"
-        error_str = item.get("error_type") or ("—" if item.get("result") != "correct" else "")
-        items_rows += f"""
+        if es_rep:
+            # Para padres: sin columna tipo de error
+            items_rows += f"""
+        <tr>
+          <td><strong>{_esc(item['word_expected'])}</strong>
+              <span class="mono gray">{_esc(item['phoneme'])}</span></td>
+          <td class="mono">{_esc(item.get('word_produced') or '—')}</td>
+          <td style="color:{rc}; font-weight:600;">{result_str}</td>
+        </tr>"""
+        else:
+            error_str = item.get("error_type") or ("—" if item.get("result") != "correct" else "")
+            items_rows += f"""
         <tr>
           <td><strong>{_esc(item['word_expected'])}</strong>
               <span class="mono gray">{_esc(item['phoneme'])}</span></td>
@@ -100,7 +139,18 @@ def generate_report_html(data: dict) -> str:
           <td>{_esc(error_str)}</td>
         </tr>"""
 
-    items_section = f"""
+    if items_rows:
+        if es_rep:
+            items_section = f"""
+    <h2>5. Detalle por palabra</h2>
+    <table class="t">
+      <thead><tr>
+        <th>Palabra esperada</th><th>Producción del niño</th><th>Resultado</th>
+      </tr></thead>
+      <tbody>{items_rows}</tbody>
+    </table>"""
+        else:
+            items_section = f"""
     <h2>5. Detalle por palabra</h2>
     <table class="t">
       <thead><tr>
@@ -108,26 +158,33 @@ def generate_report_html(data: dict) -> str:
         <th>Resultado</th><th>Tipo de error</th>
       </tr></thead>
       <tbody>{items_rows}</tbody>
-    </table>""" if items_rows else ""
+    </table>"""
+    else:
+        items_section = ""
 
-    # Notas Gemma
-    nota_clinica_section = f"""
+    # ── Sección 6: Nota ───────────────────────────────────────────────────
+    if es_rep:
+        _texto = report.get("nota_representantes") or ""
+        _parrafos = "".join(f"<p>{_esc(p)}</p>" for p in _texto.split("\n\n") if p.strip())
+        nota_section = f"""
+    <h2>6. Nota para representantes</h2>
+    <div class="note">{_parrafos}</div>
+    """ if _parrafos else ""
+    else:
+        _texto = report.get("nota_clinica") or ""
+        _parrafos = "".join(f"<p>{_esc(p)}</p>" for p in _texto.split("\n\n") if p.strip())
+        nota_section = f"""
     <h2>6. Nota clínica</h2>
-    <div class="note">{_esc(report['nota_clinica'])}</div>
-    """ if report.get("nota_clinica") else ""
+    <div class="note">{_parrafos}</div>
+    """ if _parrafos else ""
 
-    nota_rep_section = f"""
-    <h2>7. Nota para representantes</h2>
-    <div class="note">{_esc(report['nota_representantes'])}</div>
-    """ if report.get("nota_representantes") else ""
-
-    # Anamnesis
+    # ── Anamnesis ─────────────────────────────────────────────────────────
     anamnesis_rows = [
-        ("Historial de otitis",             "Sí" if s.get("anamnesis_otitis") else "No"),
-        ("Diagnóstico auditivo",            s.get("anamnesis_hearing_dx") or "Ninguno"),
-        ("Idioma(s) en el hogar",           s.get("anamnesis_home_language") or "Español"),
+        ("Historial de otitis",               "Sí" if s.get("anamnesis_otitis") else "No"),
+        ("Diagnóstico auditivo",              s.get("anamnesis_hearing_dx") or "Ninguno"),
+        ("Idioma(s) en el hogar",             s.get("anamnesis_home_language") or "Español"),
         ("Antecedentes familiares del habla", "Sí" if s.get("anamnesis_family_history") else "No"),
-        ("Terapia de lenguaje previa",      "Sí" if s.get("anamnesis_prior_therapy") else "No"),
+        ("Terapia de lenguaje previa",        "Sí" if s.get("anamnesis_prior_therapy") else "No"),
     ]
     raw_notes = s.get("notes") or ""
     if "Obs: " in raw_notes:
@@ -139,17 +196,18 @@ def generate_report_html(data: dict) -> str:
         for k, v in anamnesis_rows
     )
 
-    color = pffb_color(s.get("pffb"))
-    pffb_val = s.get("pffb")
+    color     = pffb_color(s.get("pffb"))
+    pffb_val  = s.get("pffb")
     level_val = s.get("level") or "—"
     session_id = s.get("session_id", "")
-    started = (s.get("started_at") or "")[:16].replace("T", " ")
+    started    = (s.get("started_at") or "")[:16].replace("T", " ")
+    titulo     = "Informe para representantes" if es_rep else "Informe clínico"
 
     return f"""<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>FonoScreen — {_esc(s.get('child_name',''))}</title>
+  <title>FonoScreen — {titulo}</title>
   <style>
     *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
     body {{
@@ -190,6 +248,8 @@ def generate_report_html(data: dict) -> str:
       padding: 10px 14px; font-size: 9.5pt;
       line-height: 1.65; color: #4A5568; margin-top: 4px;
     }}
+    .note p {{ margin-bottom: 8px; }}
+    .note p:last-child {{ margin-bottom: 0; }}
     .disclaimer {{
       font-size: 8pt; color: #A0AEC0; font-style: italic;
       text-align: center; margin-top: 28px; padding-top: 14px;
@@ -206,7 +266,7 @@ def generate_report_html(data: dict) -> str:
 </head>
 <body>
 
-  <h1>{_esc(s.get('child_name', '—'))}</h1>
+  <h1>{titulo}</h1>
   <p class="sid">Sesión #{session_id} &nbsp;·&nbsp; {started}</p>
 
   <h2>1. Identificación</h2>
@@ -227,14 +287,13 @@ def generate_report_html(data: dict) -> str:
   <h2>3. Resultado global</h2>
   <div class="result-box">
     <div class="r-level">{_esc(level_val)}</div>
-    <div class="r-pffb">{pffb_val if pffb_val is not None else '—'}%</div>
+    <div class="r-pffb">{fmt(pffb_val)}%</div>
     <div class="r-interp">{pffb_interp(pffb_val)}</div>
   </div>
 
   {phonemes_section}
   {items_section}
-  {nota_clinica_section}
-  {nota_rep_section}
+  {nota_section}
 
   <p class="disclaimer">
     Los resultados de este cribado no constituyen un diagnóstico clínico
@@ -246,7 +305,6 @@ def generate_report_html(data: dict) -> str:
 
 
 def _esc(text) -> str:
-    """Escapa caracteres HTML básicos."""
     if text is None:
         return "—"
     return (str(text)
