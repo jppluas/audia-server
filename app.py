@@ -1,5 +1,5 @@
 """
-FonoScreen - Kiosk server
+Audia - Kiosk server
 Sistema de cribado fonológico automatizado para niños 3-5 años
 ESPOL · Ingeniería en Ciencias de la Computación
 
@@ -39,14 +39,14 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s  %(levelname)s  %(message)s",
 )
-log = logging.getLogger("fonoscreen")
+log = logging.getLogger("audia")
 
 # Detección de entorno: Pi vs laptop
 IS_PI = Path("/proc/device-tree/model").exists()
 SERVER_START_TIME = time.time()
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("FONOSCREEN_SECRET", "dev-secret-fonoscreen")
+app.secret_key = os.environ.get("AUDIA_SECRET", "dev-secret-audia")
 
 # Inicializar la base de datos (crea tablas si no existen)
 db.init()
@@ -358,7 +358,7 @@ def api_tone():
         sample_rate = 44100
         n_samples = int(sample_rate * 1.5)
         freq = 1000
-        tone_file = "/tmp/fonoscreen_tone.wav"
+        tone_file = "/tmp/audia_tone.wav"
         with open(tone_file, "wb") as f:
             data_size = n_samples * 2
             f.write(b"RIFF")
@@ -383,7 +383,7 @@ def api_tone():
 _mic_process = None
 _mic_stream   = None
 _mic_frames   = []
-MIC_TEST_FILE = "/tmp/fonoscreen_mic_test.wav"
+MIC_TEST_FILE = "/tmp/audia_mic_test.wav"
 
 
 @app.route("/api/device/mic/start", methods=["POST"])
@@ -558,7 +558,7 @@ def api_historial_audio(session_id, word):
 def api_historial_export_zip(session_id):
     """
     Exporta la sesión completa como ZIP:
-      - fonoscreen_<id>.json        — datos completos
+      - audia_<id>.json        — datos completos
       - informe_<nombre>_<id>.pdf   — generado en memoria con weasyprint
       - audios/<id>_<palabra>.wav   — si existen en disco
     Nada se escribe en disco en el servidor.
@@ -575,7 +575,7 @@ def api_historial_export_zip(session_id):
 
         # 1. JSON
         zf.writestr(
-            f"fonoscreen_{session_id}.json",
+            f"audia_{session_id}.json",
             json.dumps(data, indent=2, ensure_ascii=False)
         )
 
@@ -602,7 +602,7 @@ def api_historial_export_zip(session_id):
                 zf.write(wav, f"audios/{wav.name}")
 
     buf.seek(0)
-    filename = f"fonoscreen_{session_id}.zip"
+    filename = f"audia_{session_id}.zip"
     return send_file(
         buf,
         mimetype="application/zip",
@@ -738,8 +738,8 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     debug = os.environ.get("FLASK_ENV", "development") == "development"
 
-    log.info("FonoScreen arrancando en %s:%d (debug=%s, pi=%s)", host, port, debug, IS_PI)
-    print(f"\n  FonoScreen corriendo en http://{host}:{port}")
+    log.info("Audia arrancando en %s:%d (debug=%s, pi=%s)", host, port, debug, IS_PI)
+    print(f"\n  Audia corriendo en http://{host}:{port}")
     print(f"  Entorno: {'Raspberry Pi' if IS_PI else 'Laptop / desarrollo'}\n")
 
     app.run(host=host, port=port, debug=debug, use_reloader=debug)

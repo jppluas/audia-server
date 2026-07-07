@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Historial — FonoScreen{% endblock %}
+{% block title %}Historial — Audia{% endblock %}
 
 {% block header_action %}
 <a href="/" class="header-action">← Sesión</a>
@@ -546,7 +546,7 @@
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `fonoscreen_${currentSessionId}.json`;
+    a.download = `audia_${currentSessionId}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };

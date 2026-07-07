@@ -174,7 +174,7 @@ exports/
 recordings/
 
 # Archivos de prueba de audio
-/tmp/fonoscreen_*.wav
+/tmp/audia_*.wav
 
 # Informes generados sueltos en la raíz (no deberían estar ahí)
 informe_*.pdf

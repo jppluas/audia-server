@@ -11,4 +11,4 @@ sudo systemctl unmask hostapd
 sudo systemctl enable hostapd
 sudo systemctl restart hostapd
 sudo systemctl restart dnsmasq
-echo "Modo hotspot activo. Red: FonoScreen / fonoscreen2025"
+echo "Modo hotspot activo. Red: Audia / audia2025"

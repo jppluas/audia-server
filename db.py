@@ -1,5 +1,5 @@
 """
-FonoScreen — db.py
+Audia — db.py
 Capa de persistencia SQLite.
 
 Tablas:
@@ -31,7 +31,7 @@ import json
 from pathlib import Path
 from datetime import datetime
 
-DB_PATH = Path(__file__).resolve().parent / "fonoscreen.db"
+DB_PATH = Path(__file__).resolve().parent / "audia.db"
 
 
 def _connect() -> sqlite3.Connection:
@@ -191,7 +191,7 @@ def purge_incomplete_sessions():
             conn.execute("DELETE FROM sessions          WHERE session_id=?", (sid,))
         if rows:
             import logging
-            logging.getLogger("fonoscreen").info(
+            logging.getLogger("audia").info(
                 "Purged %d incomplete session(s) on startup.", len(rows)
             )
 
@@ -442,7 +442,7 @@ def export_session(session_id: str) -> dict | None:
 
 def seed_test_session() -> str:
     """
-    Sesión de prueba basada en la batería fonológica real de FonoScreen.
+    Sesión de prueba basada en la batería fonológica real de Audia.
     Palabras, fonemas y resultados son coherentes con la evaluación manual
     de los audios de prueba (bien%, silencio, tipo de error).
     Devuelve el session_id.

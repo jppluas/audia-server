@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Sesión en curso — FonoScreen{% endblock %}
+{% block title %}Sesión en curso — Audia{% endblock %}
 
 {% block header_action %}
 <span class="badge badge-teal" style="font-family:var(--font-mono); font-size:0.75rem;">
@@ -32,7 +32,7 @@
   <div id="no-voice-banner" style="display:none; margin-top:16px; padding:12px 16px;
        background:var(--amber-light); border-radius:var(--radius-sm); border-left:3px solid var(--amber);">
     <p style="font-size:0.9rem; font-weight:600; color:#92600A;">
-      🔇 No se escuchó respuesta
+      🔇 No se detectó respuesta
     </p>
     <p style="font-size:0.82rem; color:#92600A; margin-top:3px;">
       El sistema va a repetir el estímulo
@@ -93,7 +93,7 @@
     },
     playing: {
       icon: "🔊",
-      label: "Escucha con atención",
+      label: "Reproduciendo estímulo",
       sub: "El niño debe escuchar la palabra",
       badge: ["badge-teal", "En curso"],
       showWord: true,
@@ -101,8 +101,8 @@
     },
     recording: {
       icon: "🔴",
-      label: "Ahora repite la palabra",
-      sub: "El sistema está grabando la respuesta",
+      label: "Grabando respuesta",
+      sub: "El sistema está grabando la respuesta del niño",
       badge: ["badge-teal", "Grabando"],
       pulse: true,
       showWord: true,
@@ -110,7 +110,7 @@
     },
     no_voice: {
       icon: "🔇",
-      label: "No se escuchó respuesta",
+      label: "No se detectó respuesta",
       sub: "El sistema repetirá el estímulo automáticamente",
       badge: ["badge-amber", "Reintentando"],
       showWord: true,
@@ -201,8 +201,9 @@
     analysisWrap.style.display = cfg.showAnalysis ? "block" : "none";
     if (cfg.showAnalysis) {
       const ap = state.analysis_progress || 0;
-      analysisFill.style.width = Math.round((ap / total) * 100) + "%";
-      analysisText.textContent = `${ap} / ${total}`;
+      const analysisTotal = state.analysis_total || total;
+      analysisFill.style.width = Math.round((ap / analysisTotal) * 100) + "%";
+      analysisText.textContent = `${ap} / ${analysisTotal}`;
       if (cfg.analysisLabel) analysisLabel.textContent = cfg.analysisLabel;
     }
 

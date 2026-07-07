@@ -1,5 +1,5 @@
 """
-FonoScreen — report_html.py
+Audia — report_html.py
 Fuente única de verdad del HTML del informe de evaluación.
 
 tipo="clinico"        — informe completo para el especialista
@@ -207,7 +207,7 @@ def generate_report_html(data: dict, tipo: str = "clinico") -> str:
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>FonoScreen — {titulo}</title>
+  <title>Audia — {titulo}</title>
   <style>
     *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
     body {{

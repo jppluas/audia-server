@@ -1,14 +1,14 @@
 [Unit]
-Description=FonoScreen - Kiosk server de cribado fonológico
+Description=Audia - Kiosk server de cribado fonológico
 After=network.target
 
 [Service]
 Type=simple
 User=pi
-WorkingDirectory=/home/pi/fonoscreen-server
+WorkingDirectory=/home/pi/audia-server
 Environment="FLASK_ENV=production"
 Environment="PORT=5000"
-ExecStart=/home/pi/fonoscreen-server/venv/bin/python app.py
+ExecStart=/home/pi/audia-server/venv/bin/python app.py
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal

@@ -1,6 +1,6 @@
 #!/bin/bash
 echo "Activando modo desarrollo (WiFi normal)..."
-sudo systemctl stop fonoscreen-hotspot
+sudo systemctl stop audia-hotspot
 sudo systemctl stop hostapd
 sudo systemctl disable hostapd
 sudo systemctl mask hostapd
@@ -10,9 +10,18 @@ sudo ip link set wlan0 up
 sudo rm -f /etc/NetworkManager/conf.d/unmanaged.conf
 sudo systemctl restart NetworkManager
 sleep 3
-sudo nmcli device wifi connect SSID_AQUI password CONTRASENA_AQUI
-sleep 5
-sudo systemctl stop hostapd
+
+# Conectar usando el primer perfil WiFi guardado (no depende del nombre exacto)
+CONN=$(nmcli -t -f NAME,TYPE connection show | grep wifi | head -1 | cut -d: -f1)
+if [ -n "$CONN" ]; then
+    echo "==> Conectando a: $CONN"
+    sudo nmcli connection up "$CONN"
+    sleep 5
+else
+    echo "ERROR: No se encontró ningún perfil WiFi guardado"
+fi
+
+sudo systemctl stop hostapd 2>/dev/null || true
 sudo ip addr del 192.168.4.1/24 dev wlan0 2>/dev/null || true
 ip addr show wlan0 | grep "inet "
 echo "Modo desarrollo activo. Conéctate por SSH."

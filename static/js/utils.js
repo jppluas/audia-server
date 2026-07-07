@@ -1,4 +1,4 @@
-/* FonoScreen — utils.js
+/* Audia — utils.js
    Funciones compartidas por todas las páginas */
 
 "use strict";

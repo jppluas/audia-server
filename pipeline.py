@@ -126,25 +126,31 @@ def run_pipeline(session_id, state_fantasma):
         # === FASE FINAL ===
         actualizar_ui(session_id, "status", "analyzing")
         actualizar_ui(session_id, "current_word", None)
-        
+        actualizar_ui(session_id, "analysis_progress", 0)
+
         agrupado = {}
         for item in resultados_items:
             if item["result"] != "not_evaluable":
                 agrupado.setdefault(item["phoneme"], []).append(item)
-                
+
+        actualizar_ui(session_id, "analysis_total", len(agrupado))
+
         pff_por_fonema = []
-        for fon, items in agrupado.items():
+        for idx, (fon, items) in enumerate(agrupado.items()):
             promedio = sum(x["pff"] for x in items) / len(items) if items else 0
             nivel = "Normal" if promedio > 75 else "Seguimiento activo" if promedio >= 50 else "Atención requerida"
             errores = [x["error_type"] for x in items if x["error_type"]]
             predominante = max(set(errores), key=errores.count) if errores else "Ninguno"
-            
+
             db.save_phoneme_summary(session_id, {"phoneme": fon, "pff": promedio, "level": nivel, "error_predominant": predominante})
             pff_por_fonema.append((fon, promedio, predominante))
 
+            actualizar_ui(session_id, "analysis_progress", idx + 1)
+            time.sleep(0.15)  # da tiempo a que la UI refleje el avance
+
         pffb_global = sum(p[1] for p in pff_por_fonema) / len(pff_por_fonema) if pff_por_fonema else 0
         nivel_global = "Normal" if pffb_global > 75 else "Seguimiento activo" if pffb_global >= 50 else "Atención requerida"
-        
+
         db.close_session(session_id, pffb_global, nivel_global)
 
         actualizar_ui(session_id, "status", "generating_report")
