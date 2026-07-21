@@ -2,79 +2,55 @@
 {% block title %}Sesión en curso — Audia{% endblock %}
 
 {% block header_action %}
-<span class="badge badge-teal" style="font-family:var(--font-mono); font-size:0.75rem;">
-  #{{ state.session_id }}
-</span>
+<span class="session-id">#{{ state.session_id }}</span>
 {% endblock %}
 
 {% block content %}
+<section class="page-heading compact-heading">
+  <p class="eyebrow">Evaluación activa</p>
+  <h1 class="page-title">Sesión en curso</h1>
+</section>
 
-<!-- Indicador de estado principal -->
-<div class="card" style="text-align:center; padding:28px 20px;">
-  <div id="status-icon" style="font-size:2.8rem; margin-bottom:10px; transition: all 0.3s;">🔊</div>
-  <p id="status-label" style="font-size:1.1rem; font-weight:700; color:var(--blue); margin-bottom:4px;">
-    Preparando...
-  </p>
-  <p id="status-sub" style="font-size:0.85rem; color:var(--gray-400); line-height:1.45;">
-    Iniciando sistema
-  </p>
+<section class="card session-stage">
+  <div id="status-icon" class="status-glyph" data-state="idle" aria-hidden="true"></div>
+  <p id="status-label" class="session-status-title">Preparando evaluación</p>
+  <p id="status-sub" class="session-status-subtitle">Iniciando sistema</p>
 
-  <!-- Palabra objetivo -->
-  <div id="word-display" style="margin-top:20px; padding:14px 20px; background:var(--blue-light);
-       border-radius:var(--radius-sm); display:inline-block; min-width:140px;">
-    <p style="font-size:0.72rem; font-weight:600; color:var(--blue-mid); text-transform:uppercase;
-       letter-spacing:0.06em; margin-bottom:4px;">Palabra objetivo</p>
-    <p id="current-word" style="font-size:2rem; font-weight:800; color:var(--blue);
-       letter-spacing:-0.02em;">—</p>
+  <div id="word-display" class="word-panel">
+    <p class="word-label">Palabra objetivo</p>
+    <p id="current-word" class="current-word">—</p>
   </div>
 
-  <!-- Mensaje de no voz detectada -->
-  <div id="no-voice-banner" style="display:none; margin-top:16px; padding:12px 16px;
-       background:var(--amber-light); border-radius:var(--radius-sm); border-left:3px solid var(--amber);">
-    <p style="font-size:0.9rem; font-weight:600; color:#92600A;">
-      🔇 No se detectó respuesta
-    </p>
-    <p style="font-size:0.82rem; color:#92600A; margin-top:3px;">
-      El sistema va a repetir el estímulo
-    </p>
+  <div id="no-voice-banner" class="notice notice-warning session-notice" style="display:none;">
+    <strong>No se detectó respuesta</strong>
+    <p>El sistema repetirá el estímulo automáticamente.</p>
   </div>
-</div>
+</section>
 
-<!-- Barra de progreso -->
-<div class="card" style="padding:16px 20px;">
-  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
-    <span style="font-size:0.82rem; font-weight:600; color:var(--gray-700);">Progreso</span>
-    <span id="progress-text" style="font-size:0.82rem; font-weight:700; color:var(--blue);
-         font-family:var(--font-mono);">0 / 20</span>
+<section class="card progress-card">
+  <div class="progress-heading">
+    <span>Progreso de la evaluación</span>
+    <span id="progress-text" class="progress-value">0 / 20</span>
   </div>
-  <div class="progress-track">
+  <div class="progress-track" aria-label="Progreso de la evaluación">
     <div class="progress-fill" id="progress-fill" style="width:0%"></div>
   </div>
 
-  <!-- Progreso de análisis (visible solo en fase analyzing/generating_report) -->
-  <div id="analysis-progress-wrap" style="display:none; margin-top:12px;">
-    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
-      <span style="font-size:0.78rem; color:var(--gray-400);" id="analysis-label">Analizando grabaciones</span>
-      <span style="font-size:0.78rem; font-weight:700; color:var(--teal); font-family:var(--font-mono);"
-            id="analysis-text">0 / 20</span>
+  <div id="analysis-progress-wrap" class="analysis-progress" style="display:none;">
+    <div class="progress-heading progress-heading-small">
+      <span id="analysis-label">Analizando grabaciones</span>
+      <span id="analysis-text" class="progress-value">0 / 20</span>
     </div>
-    <div class="progress-track" style="height:4px;">
-      <div class="progress-fill" id="analysis-fill" style="width:0%; background:linear-gradient(90deg,var(--teal),var(--teal));"></div>
+    <div class="progress-track progress-track-small">
+      <div class="progress-fill" id="analysis-fill" style="width:0%"></div>
     </div>
   </div>
-</div>
+</section>
 
-<!-- Controles -->
-<div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
-  <button class="btn btn-outline" id="btn-pause">
-    ⏸ Pausar
-  </button>
-  <button class="btn btn-outline" id="btn-reset"
-          style="color:var(--red); border-color:rgba(192,57,43,0.3);">
-    ✕ Cancelar prueba
-  </button>
+<div class="button-grid">
+  <button class="btn btn-outline" id="btn-pause">Pausar</button>
+  <button class="btn btn-quiet-danger" id="btn-reset">Cancelar prueba</button>
 </div>
-
 {% endblock %}
 
 {% block scripts %}
@@ -84,7 +60,7 @@
   // ── Configuración de estados ───────────────────────────────────────────
   const STATUS_CONFIG = {
     idle: {
-      icon: "⏳",
+      icon: "idle",
       label: "Preparando evaluación",
       sub: "Cargando recursos del sistema",
       badge: ["badge-teal", "En curso"],
@@ -92,7 +68,7 @@
       showAnalysis: false,
     },
     playing: {
-      icon: "🔊",
+      icon: "playing",
       label: "Reproduciendo estímulo",
       sub: "El niño debe escuchar la palabra",
       badge: ["badge-teal", "En curso"],
@@ -100,7 +76,7 @@
       showAnalysis: false,
     },
     recording: {
-      icon: "🔴",
+      icon: "recording",
       label: "Grabando respuesta",
       sub: "El sistema está grabando la respuesta del niño",
       badge: ["badge-teal", "Grabando"],
@@ -109,7 +85,7 @@
       showAnalysis: false,
     },
     no_voice: {
-      icon: "🔇",
+      icon: "no_voice",
       label: "No se detectó respuesta",
       sub: "El sistema repetirá el estímulo automáticamente",
       badge: ["badge-amber", "Reintentando"],
@@ -118,7 +94,7 @@
       showAnalysis: false,
     },
     analyzing: {
-      icon: "⚙️",
+      icon: "analyzing",
       label: "Analizando grabaciones",
       sub: "Por favor espere, esto puede tomar un momento",
       badge: ["badge-blue", "Analizando"],
@@ -127,7 +103,7 @@
       analysisLabel: "Analizando grabaciones",
     },
     generating_report: {
-      icon: "📄",
+      icon: "generating_report",
       label: "Preparando informe",
       sub: "Casi listo, generando el reporte de evaluación",
       badge: ["badge-blue", "Preparando informe"],
@@ -136,7 +112,7 @@
       analysisLabel: "Preparando informe",
     },
     paused: {
-      icon: "⏸",
+      icon: "paused",
       label: "Evaluación pausada",
       sub: "Presione continuar cuando esté listo",
       badge: ["badge-amber", "Pausado"],
@@ -144,7 +120,7 @@
       showAnalysis: false,
     },
     done: {
-      icon: "✅",
+      icon: "done",
       label: "¡Evaluación completada!",
       sub: "Redirigiendo a resultados...",
       badge: ["badge-teal", "Completo"],
@@ -177,7 +153,8 @@
     const cfg = STATUS_CONFIG[state.status] || STATUS_CONFIG.idle;
 
     // Icono y texto
-    iconEl.textContent  = cfg.icon;
+    iconEl.textContent = "";
+    iconEl.dataset.state = cfg.icon;
     labelEl.textContent = cfg.label;
     subEl.textContent   = cfg.sub;
 
@@ -210,14 +187,14 @@
     // Botón pausa/continuar
     if (state.status === "paused") {
       btnPause.disabled = false;
-      btnPause.textContent = "▶ Continuar";
+      btnPause.textContent = "Continuar";
       paused = true;
     } else if (["analyzing", "generating_report", "done"].includes(state.status)) {
       btnPause.disabled = true;
-      btnPause.textContent = "⏸ Pausar";
+      btnPause.textContent = "Pausar";
     } else {
       btnPause.disabled = false;
-      btnPause.textContent = "⏸ Pausar";
+      btnPause.textContent = "Pausar";
       paused = false;
     }
 

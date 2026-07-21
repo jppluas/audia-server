@@ -2,131 +2,107 @@
 {% block title %}Dispositivo — Audia{% endblock %}
 
 {% block header_action %}
-<a href="/" class="header-action">← Sesión</a>
+<a href="/" class="header-action back-link">Volver a sesión</a>
 {% endblock %}
 
 {% block content %}
+<section class="page-heading">
+  <p class="eyebrow">Configuración</p>
+  <h1 class="page-title">Dispositivo</h1>
+  <p class="page-description">Estado del sistema y controles de audio del equipo.</p>
+</section>
 
-<!-- Estado del sistema -->
-<div class="card">
-  <div class="card-header">
-    <span class="card-icon blue">📡</span>
+<section class="card">
+  <div class="card-header split-header">
     <div>
-      <p class="card-title">Estado del sistema</p>
+      <h2 class="card-title">Estado del sistema</h2>
+      <p class="card-subtitle">Información actualizada del dispositivo.</p>
     </div>
+    <span class="live-indicator"><i></i> En línea</span>
   </div>
-  <div>
-    <div class="status-row">
-      <span class="status-key">Servidor activo hace</span>
+  <div class="metrics-grid">
+    <div class="metric-item">
+      <span class="status-key">Servidor activo</span>
       <span class="status-val" id="sys-uptime">{{ uptime }}</span>
     </div>
-    <div class="status-row">
-      <span class="status-key">Espacio libre en disco</span>
-      <span class="status-val">{{ disk.free }} (de {{ disk.total }})</span>
+    <div class="metric-item">
+      <span class="status-key">Espacio libre</span>
+      <span class="status-val">{{ disk.free }} <small>de {{ disk.total }}</small></span>
     </div>
-    <div class="status-row">
+    <div class="metric-item">
       <span class="status-key">Uso de disco</span>
       <span class="status-val">{{ disk.percent }}</span>
     </div>
-    <div class="status-row">
+    <div class="metric-item">
       <span class="status-key">Hora del servidor</span>
       <span class="status-val" id="sys-time">—</span>
     </div>
   </div>
-</div>
+</section>
 
-<!-- ── PARLANTE: volumen + prueba ── -->
-<div class="card">
+<section class="card audio-card">
   <div class="card-header">
-    <span class="card-icon teal">🔊</span>
     <div>
-      <p class="card-title">Parlante</p>
-      <p class="card-subtitle">Volumen y prueba de audio</p>
+      <h2 class="card-title">Parlante</h2>
+      <p class="card-subtitle">Ajuste el volumen de salida y compruebe la reproducción.</p>
     </div>
   </div>
-
-  <!-- Slider de volumen -->
-  <div class="slider-wrap">
-    <span style="font-size:1.1rem;">🔈</span>
-    <input type="range" class="volume-slider" id="vol-slider" min="0" max="100" value="80">
+  <div class="slider-label-row">
+    <span>Volumen</span>
     <span class="volume-label" id="vol-label">80%</span>
-    <span style="font-size:1.1rem;">🔊</span>
   </div>
-  <p id="vol-status" style="font-size:0.78rem; color:var(--gray-400); text-align:center; min-height:16px; margin-top:6px;"></p>
-
-  <hr class="divider" style="margin:14px 0;">
-
-  <!-- Prueba de tono -->
-  <button class="btn btn-blue btn-full btn-sm" id="btn-tone">
-    🔔 Reproducir tono de prueba
-  </button>
-  <p id="tone-status" style="margin-top:8px; font-size:0.78rem; color:var(--gray-400); text-align:center; min-height:16px;"></p>
-</div>
-
-<!-- ── MICRÓFONO: volumen + prueba ── -->
-<div class="card">
-  <div class="card-header">
-    <span class="card-icon teal">🎙️</span>
-    <div>
-      <p class="card-title">Micrófono</p>
-      <p class="card-subtitle">Sensibilidad y prueba de grabación</p>
-    </div>
-  </div>
-
-  <!-- Slider de volumen del micrófono -->
   <div class="slider-wrap">
-    <span style="font-size:1.1rem;">🔇</span>
-    <input type="range" class="volume-slider" id="mic-vol-slider" min="0" max="100" value="80">
-    <span class="volume-label" id="mic-vol-label">80%</span>
-    <span style="font-size:1.1rem;">🎙️</span>
+    <span class="slider-bound">0</span>
+    <input type="range" class="volume-slider" id="vol-slider" min="0" max="100" value="80" aria-label="Volumen del parlante">
+    <span class="slider-bound">100</span>
   </div>
-  <p id="mic-vol-status" style="font-size:0.78rem; color:var(--gray-400); text-align:center; min-height:16px; margin-top:6px;"></p>
-
-  <hr class="divider" style="margin:14px 0;">
-
-  <!-- Estado visual de grabación -->
-  <div id="mic-state-display" style="
-    background: var(--gray-100);
-    border-radius: var(--radius-sm);
-    padding: 16px;
-    text-align: center;
-    margin-bottom: 14px;
-    min-height: 72px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;">
-    <span id="mic-icon" style="font-size:1.8rem;">🎙️</span>
-    <span id="mic-label" style="font-size:0.85rem; font-weight:600; color:var(--gray-700);">Listo para grabar</span>
-    <span id="mic-timer" style="font-size:1.1rem; font-weight:800; color:var(--blue); font-family:var(--font-mono); display:none;">0:00</span>
+  <p id="vol-status" class="field-status"></p>
+  <div class="card-action-row">
+    <button class="btn btn-outline btn-full btn-sm" id="btn-tone">Reproducir tono de prueba</button>
+    <p id="tone-status" class="field-status"></p>
   </div>
+</section>
 
-  <!-- Botón único — el reproducir es automático -->
-  <button class="btn btn-blue btn-full" id="btn-mic-record">
-    ⏺ Iniciar grabación
-  </button>
-  <p id="mic-status-msg" style="margin-top:10px; font-size:0.78rem; color:var(--gray-400); text-align:center; min-height:18px;"></p>
-</div>
-
-<!-- Control del dispositivo -->
-<div class="card">
+<section class="card audio-card">
   <div class="card-header">
-    <span class="card-icon red">⚡</span>
     <div>
-      <p class="card-title">Control del dispositivo</p>
+      <h2 class="card-title">Micrófono</h2>
+      <p class="card-subtitle">Configure la sensibilidad y realice una prueba breve.</p>
     </div>
   </div>
-  <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap:10px;">
-    <button class="btn btn-outline btn-sm" id="btn-reboot">
-      🔄 Reiniciar
-    </button>
-    <button class="btn btn-danger btn-sm" id="btn-shutdown">
-      ⏻ Apagar
-    </button>
+  <div class="slider-label-row">
+    <span>Sensibilidad</span>
+    <span class="volume-label" id="mic-vol-label">80%</span>
   </div>
-</div>
+  <div class="slider-wrap">
+    <span class="slider-bound">0</span>
+    <input type="range" class="volume-slider" id="mic-vol-slider" min="0" max="100" value="80" aria-label="Sensibilidad del micrófono">
+    <span class="slider-bound">100</span>
+  </div>
+  <p id="mic-vol-status" class="field-status"></p>
 
+  <div id="mic-state-display" class="mic-state-display">
+    <span id="mic-icon" class="mic-glyph" data-state="idle" aria-hidden="true"></span>
+    <span id="mic-label" class="mic-label">Listo para grabar</span>
+    <span id="mic-timer" class="mic-timer" style="display:none;">0:00</span>
+  </div>
+
+  <button class="btn btn-primary btn-full" id="btn-mic-record">Iniciar grabación</button>
+  <p id="mic-status-msg" class="field-status"></p>
+</section>
+
+<section class="card danger-zone">
+  <div class="card-header">
+    <div>
+      <h2 class="card-title">Control del dispositivo</h2>
+      <p class="card-subtitle">Estas acciones interrumpen temporalmente el servicio.</p>
+    </div>
+  </div>
+  <div class="button-grid">
+    <button class="btn btn-outline btn-sm" id="btn-reboot">Reiniciar</button>
+    <button class="btn btn-danger btn-sm" id="btn-shutdown">Apagar</button>
+  </div>
+</section>
 {% endblock %}
 
 {% block scripts %}
@@ -176,7 +152,7 @@
       level: parseInt(volSlider.value)
     });
     if (ok && data.ok) {
-      volStatus.textContent = `✓ Volumen ajustado a ${data.level}%`;
+      volStatus.textContent = `Volumen ajustado a ${data.level}%`;
       volStatus.style.color = "var(--teal)";
     } else {
       volStatus.textContent = data?.error || "Error al ajustar volumen.";
@@ -205,7 +181,7 @@
       level: parseInt(micVolSlider.value)
     });
     if (ok && data.ok) {
-      micVolStatus.textContent = `✓ Sensibilidad ajustada a ${data.level}%`;
+      micVolStatus.textContent = `Sensibilidad ajustada a ${data.level}%`;
       micVolStatus.style.color = "var(--teal)";
     } else {
       micVolStatus.textContent = data?.error || "Error al ajustar volumen.";
@@ -223,7 +199,7 @@
     const { ok, data } = await FS.api("/api/device/tone", "POST");
 
     btnTone.disabled = false;
-    btnTone.textContent = "🔔 Reproducir tono de prueba";
+    btnTone.textContent = "Reproducir tono de prueba";
 
     if (ok && data.ok) {
       if (data.simulated) {
@@ -231,7 +207,7 @@
         toneStatus.textContent = "Simulado en el navegador.";
         toneStatus.style.color = "var(--gray-400)";
       } else {
-        toneStatus.textContent = "✓ Tono reproducido por el parlante.";
+        toneStatus.textContent = "Tono reproducido por el parlante.";
         toneStatus.style.color = "var(--teal)";
       }
     } else {
@@ -265,18 +241,20 @@
     micTimer.style.display = "none";
 
     if (state === "idle") {
-      micIcon.textContent   = "🎙️";
+      micIcon.textContent = "";
+      micIcon.dataset.state = "idle";
       micLabel.textContent  = "Listo para grabar";
       micLabel.style.color  = "var(--gray-700)";
-      btnRecord.textContent = "⏺ Iniciar grabación";
+      btnRecord.textContent = "Iniciar grabación";
       btnRecord.className   = "btn btn-blue btn-full";
       btnRecord.disabled    = false;
 
     } else if (state === "recording") {
-      micIcon.textContent   = "🔴";
+      micIcon.textContent = "";
+      micIcon.dataset.state = "recording";
       micLabel.textContent  = "Grabando...";
       micLabel.style.color  = "var(--red)";
-      btnRecord.textContent = "⏹ Detener y reproducir";
+      btnRecord.textContent = "Detener y reproducir";
       btnRecord.className   = "btn btn-danger btn-full";
       btnRecord.disabled    = false;
       timerSeconds = 0;
@@ -290,11 +268,12 @@
       }, 1000);
 
     } else if (state === "playing") {
-      micIcon.textContent   = "🔊";
+      micIcon.textContent = "";
+      micIcon.dataset.state = "playing";
       micLabel.textContent  = "Reproduciendo...";
       micLabel.style.color  = "var(--blue)";
       btnRecord.disabled    = true;
-      btnRecord.textContent = "⏹ Detener y reproducir";
+      btnRecord.textContent = "Detener y reproducir";
     }
   }
 
@@ -303,7 +282,7 @@
     micMsg.textContent = "";
     const { ok, data } = await FS.api("/api/device/mic/play", "POST");
     if (ok && data.ok) {
-      micMsg.textContent = "✓ Reproducción completada. Presiona grabar para repetir.";
+      micMsg.textContent = "Reproducción completada. Presione grabar para repetir.";
       micMsg.style.color = "var(--teal)";
     } else {
       micMsg.textContent = data?.error || "Error al reproducir.";
@@ -327,7 +306,7 @@
       btnRecord.disabled = true;
       const { ok, data } = await FS.api("/api/device/mic/stop", "POST");
       if (ok && data.ok) {
-        micMsg.textContent = `✓ ${timerSeconds}s grabados. Reproduciendo...`;
+        micMsg.textContent = `${timerSeconds}s grabados. Reproduciendo...`;
         micMsg.style.color = "var(--teal)";
         // Reproducción automática
         await playRecording();

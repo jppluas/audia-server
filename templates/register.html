@@ -1,83 +1,79 @@
 {% extends "base.html" %}
-{% block title %}Registro — Audia{% endblock %}
+{% block title %}Nueva evaluación — Audia{% endblock %}
 
 {% block header_action %}
-<div style="display:flex; gap:8px;">
-  <a href="{{ url_for('historial') }}" class="header-action">🗂 Historial</a>
-  <a href="{{ url_for('device_panel') }}" class="header-action">⚙ Dispositivo</a>
-</div>
+<nav class="header-nav" aria-label="Navegación principal">
+  <a href="{{ url_for('historial') }}" class="header-action">Historial</a>
+  <a href="{{ url_for('device_panel') }}" class="header-action">Dispositivo</a>
+</nav>
 {% endblock %}
 
 {% block content %}
+<section class="page-heading">
+  <p class="eyebrow">Evaluación fonológica</p>
+  <h1 class="page-title">Nueva evaluación</h1>
+  <p class="page-description">Registre los datos esenciales antes de comenzar la sesión.</p>
+</section>
 
-<!-- Banner de espacio bajo -->
-<div id="space-warning" style="display:none; background:var(--red-light);
-     border:1.5px solid rgba(192,57,43,0.3); border-radius:var(--radius-sm);
-     padding:12px 16px; font-size:0.85rem; color:var(--red); line-height:1.5;">
-  <strong>⚠ Espacio en disco bajo.</strong>
-  Solo quedan <span id="space-sessions-remaining">—</span> sesión(es) disponibles.
-  Libere espacio borrando audios desde
-  <a href="/historial" style="color:var(--red); font-weight:700;">el historial</a>
-  antes de continuar.
+<div id="space-warning" class="notice notice-danger" style="display:none;">
+  <div>
+    <strong>Espacio en disco bajo</strong>
+    <p>Solo quedan <span id="space-sessions-remaining">—</span> sesiones disponibles. Libere espacio desde <a href="/historial">el historial</a> antes de continuar.</p>
+  </div>
 </div>
 
-<!-- Datos del niño -->
-<div class="card">
+<section class="card">
   <div class="card-header">
-    <span class="card-icon blue">👤</span>
     <div>
-      <p class="card-title">Datos del niño</p>
-      <p class="card-subtitle">Complete antes de iniciar la evaluación</p>
+      <p class="card-kicker">Paso 1</p>
+      <h2 class="card-title">Información general</h2>
+      <p class="card-subtitle">Datos básicos para identificar la evaluación.</p>
     </div>
   </div>
 
-  <div style="display:flex; flex-direction:column; gap:14px;">
-    <div class="field-row">
-      <div class="field">
-        <label for="f-dob">Fecha de nacimiento</label>
-        <input type="date" id="f-dob">
-      </div>
-      <div class="field">
-        <label for="f-gender">Género</label>
-        <select id="f-gender">
-          <option value="">—</option>
-          <option value="F">Femenino</option>
-          <option value="M">Masculino</option>
-          <option value="O">Otro</option>
-        </select>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Edad calculada -->
-<div id="age-display" style="display:none;" class="card" style="padding:14px 20px;">
-  <div style="display:flex; align-items:center; justify-content:space-between;">
-    <span style="font-size:0.85rem; color:var(--gray-700);">Edad calculada</span>
-    <span id="age-text" class="badge badge-teal" style="font-family:var(--font-mono);"></span>
-  </div>
-  <div id="age-warning" style="display:none; margin-top:10px; font-size:0.82rem; color:#92600A;
-       background:var(--amber-light); border-radius:8px; padding:10px 12px; line-height:1.45;">
-    ⚠ Esta evaluación está diseñada para niños de 3 a 5 años. Confirme la fecha de nacimiento.
-  </div>
-</div>
-
-<!-- Anamnesis -->
-<div class="card">
-  <div class="card-header">
-    <span class="card-icon teal">📋</span>
-    <div>
-      <p class="card-title">Anamnesis</p>
-      <p class="card-subtitle">Informativa — no afecta el puntaje</p>
-    </div>
-  </div>
-
-  <div style="display:flex; flex-direction:column; gap:18px;">
-
-    <!-- 1. Historial de otitis -->
+  <div class="field-row">
     <div class="field">
+      <label for="f-dob">Fecha de nacimiento</label>
+      <input type="date" id="f-dob">
+    </div>
+    <div class="field">
+      <label for="f-gender">Género</label>
+      <select id="f-gender">
+        <option value="">Seleccione</option>
+        <option value="F">Femenino</option>
+        <option value="M">Masculino</option>
+        <option value="O">Otro</option>
+      </select>
+    </div>
+  </div>
+</section>
+
+<section id="age-display" class="compact-card" style="display:none;">
+  <div class="compact-card-row">
+    <div>
+      <p class="compact-label">Edad calculada</p>
+      <p class="compact-hint">Calculada a partir de la fecha ingresada.</p>
+    </div>
+    <span id="age-text" class="badge badge-blue"></span>
+  </div>
+  <div id="age-warning" class="notice notice-warning notice-inline" style="display:none;">
+    Esta evaluación está diseñada para niños de 3 a 5 años. Confirme la fecha de nacimiento.
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-header">
+    <div>
+      <p class="card-kicker">Paso 2</p>
+      <h2 class="card-title">Anamnesis</h2>
+      <p class="card-subtitle">Información de contexto. No modifica el puntaje.</p>
+    </div>
+  </div>
+
+  <div class="question-list">
+    <div class="question-block field">
       <label>1. ¿El niño tiene historial de otitis?</label>
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:4px;">
+      <div class="segmented-control">
         <label class="toggle-option" data-group="otitis" data-value="0">
           <input type="radio" name="otitis" value="0" checked> No
         </label>
@@ -87,10 +83,9 @@
       </div>
     </div>
 
-    <!-- 2. Diagnóstico auditivo previo -->
-    <div class="field">
+    <div class="question-block field">
       <label>2. ¿Tiene diagnóstico auditivo previo?</label>
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:4px;">
+      <div class="segmented-control">
         <label class="toggle-option" data-group="hearing" data-value="no">
           <input type="radio" name="hearing_dx_yn" value="no" checked> No
         </label>
@@ -98,9 +93,9 @@
           <input type="radio" name="hearing_dx_yn" value="yes"> Sí
         </label>
       </div>
-      <div id="hearing-detail" style="display:none; margin-top:8px;">
-        <select id="f-hearing-dx" class="field-select">
-          <option value="">— Seleccione el diagnóstico —</option>
+      <div id="hearing-detail" style="display:none;">
+        <select id="f-hearing-dx" class="field-select" aria-label="Diagnóstico auditivo">
+          <option value="">Seleccione el diagnóstico</option>
           <option value="Hipoacusia conductiva leve">Hipoacusia conductiva leve</option>
           <option value="Hipoacusia conductiva moderada">Hipoacusia conductiva moderada</option>
           <option value="Hipoacusia neurosensorial leve">Hipoacusia neurosensorial leve</option>
@@ -115,13 +110,10 @@
       </div>
     </div>
 
-    <!-- 3. Idioma en el hogar -->
-    <div class="field">
-      <label>3. ¿Qué idioma(s) se hablan en el hogar?</label>
-      <p style="font-size:0.75rem; color:var(--gray-400); margin-top:2px; margin-bottom:6px;">
-        Puede seleccionar varios
-      </p>
-      <div id="lang-options" style="display:flex; flex-direction:column; gap:6px;">
+    <div class="question-block field">
+      <label>3. ¿Qué idiomas se hablan en el hogar?</label>
+      <p class="field-hint">Puede seleccionar varios.</p>
+      <div id="lang-options" class="check-grid">
         <label class="check-option"><input type="checkbox" name="lang" value="Español" checked> Español</label>
         <label class="check-option"><input type="checkbox" name="lang" value="Inglés"> Inglés</label>
         <label class="check-option"><input type="checkbox" name="lang" value="Kichwa"> Kichwa</label>
@@ -135,10 +127,9 @@
       </div>
     </div>
 
-    <!-- 4. Antecedentes familiares -->
-    <div class="field">
+    <div class="question-block field">
       <label>4. ¿Hay antecedentes familiares de problemas del habla?</label>
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:4px;">
+      <div class="segmented-control">
         <label class="toggle-option" data-group="family" data-value="0">
           <input type="radio" name="family_history" value="0" checked> No
         </label>
@@ -146,9 +137,9 @@
           <input type="radio" name="family_history" value="1"> Sí
         </label>
       </div>
-      <div id="family-detail" style="display:none; margin-top:8px;">
-        <select id="f-family-who" class="field-select">
-          <option value="">— ¿Quién? —</option>
+      <div id="family-detail" style="display:none;">
+        <select id="f-family-who" class="field-select" aria-label="Familiar con antecedentes">
+          <option value="">Seleccione quién</option>
           <option value="Padre">Padre</option>
           <option value="Madre">Madre</option>
           <option value="Hermano/a">Hermano/a</option>
@@ -159,10 +150,9 @@
       </div>
     </div>
 
-    <!-- 5. Atención fonoaudiológica previa -->
-    <div class="field">
+    <div class="question-block field">
       <label>5. ¿El niño está o estuvo en terapia de lenguaje?</label>
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:4px;">
+      <div class="segmented-control">
         <label class="toggle-option" data-group="therapy" data-value="0">
           <input type="radio" name="prior_therapy" value="0" checked> No
         </label>
@@ -172,30 +162,21 @@
       </div>
     </div>
 
-    <!-- Observaciones libres -->
-    <div class="field">
-      <label for="f-notes">Observaciones adicionales
-        <span style="font-weight:400; color:var(--gray-400);">(opcional)</span>
-      </label>
-      <textarea id="f-notes"
-                placeholder="Cualquier información relevante no cubierta arriba."></textarea>
+    <div class="question-block field">
+      <label for="f-notes">Observaciones adicionales <span class="optional">Opcional</span></label>
+      <textarea id="f-notes" placeholder="Añada información relevante no cubierta en las preguntas anteriores."></textarea>
     </div>
-
   </div>
-</div>
+</section>
 
-<!-- Botón de autorrelleno (solo en desarrollo) -->
 <div id="dev-autofill" style="display:none;">
-  <button class="btn btn-outline btn-full btn-sm" id="btn-autofill"
-          style="border-style:dashed; color:var(--gray-700);">
-    🧪 Llenar con datos de prueba
-  </button>
+  <button class="btn btn-outline btn-full btn-sm" id="btn-autofill">Llenar con datos de prueba</button>
 </div>
 
-<button class="btn btn-primary btn-full btn-lg" id="btn-start" disabled>
-  Iniciar evaluación
-</button>
-
+<div class="primary-action-wrap">
+  <button class="btn btn-primary btn-full btn-lg" id="btn-start" disabled>Iniciar evaluación</button>
+  <p class="action-hint">La sesión podrá pausarse o cancelarse después de iniciar.</p>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -228,9 +209,7 @@
   function updateToggleStyle(radio) {
     const label = radio.closest(".toggle-option");
     if (!label) return;
-    label.style.background  = radio.checked ? "var(--blue)"  : "transparent";
-    label.style.color       = radio.checked ? "var(--white)" : "var(--blue)";
-    label.style.borderColor = radio.checked ? "var(--blue)"  : "rgba(27,58,92,0.25)";
+    label.classList.toggle("is-selected", radio.checked);
   }
 
   document.querySelectorAll(".toggle-option input[type=radio]").forEach(r => {
@@ -244,10 +223,7 @@
   function updateCheckStyle(cb) {
     const label = cb.closest(".check-option");
     if (!label) return;
-    label.style.background  = cb.checked ? "var(--blue-light)" : "transparent";
-    label.style.color       = cb.checked ? "var(--blue)"       : "var(--gray-700)";
-    label.style.borderColor = cb.checked ? "var(--blue)"       : "rgba(27,58,92,0.18)";
-    label.style.fontWeight  = cb.checked ? "600"               : "400";
+    label.classList.toggle("is-selected", cb.checked);
   }
 
   document.querySelectorAll(".check-option input[type=checkbox]").forEach(cb => {
@@ -383,61 +359,4 @@
 })();
 </script>
 
-<style>
-.toggle-option {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 10px 12px;
-  border-radius: var(--radius-sm);
-  border: 1.5px solid rgba(27,58,92,0.25);
-  font-size: 0.9rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
-  text-align: center;
-  -webkit-tap-highlight-color: transparent;
-}
-.toggle-option input[type=radio] {
-  position: absolute; opacity: 0; width: 0; height: 0;
-}
-.check-option {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  border-radius: var(--radius-sm);
-  border: 1.5px solid rgba(27,58,92,0.18);
-  font-size: 0.9rem;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
-  -webkit-tap-highlight-color: transparent;
-}
-.check-option input[type=checkbox] {
-  width: 16px; height: 16px;
-  accent-color: var(--blue);
-  flex-shrink: 0;
-}
-.field-select {
-  width: 100%;
-  border: 1.5px solid rgba(27,58,92,0.18);
-  border-radius: var(--radius-sm);
-  padding: 10px 14px;
-  font-size: 0.95rem;
-  font-family: var(--font);
-  color: var(--gray-900);
-  background: var(--white);
-  -webkit-appearance: none;
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%234A5568' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 14px center;
-  padding-right: 36px;
-}
-.field-select:focus {
-  outline: none;
-  border-color: var(--teal);
-  box-shadow: 0 0 0 3px rgba(42,157,143,0.15);
-}
-</style>
 {% endblock %}
